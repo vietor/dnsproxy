@@ -1,23 +1,28 @@
-# Object files
-*.o
-*.ko
-*.obj
-*.elf
+.*
+*.vcxproj*
+*.sln
+*.suo
+*.sdf
+*.opensdf
+*.pdb
+/.emacs.p
+/X64
+/Debug
+/Release
 
-# Libraries
+*.o
+*.obj
 *.lib
 *.a
-
-# Shared objects (inc. Windows DLLs)
 *.dll
 *.so
 *.so.*
 *.dylib
-
-# Executables
 *.exe
 *.out
 *.app
-*.i*86
-*.x86_64
-*.hex
+
+/GPATH
+/GRTAGS
+/GTAGS
+/TAGS
