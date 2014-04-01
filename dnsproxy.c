@@ -5,13 +5,14 @@
 
 #include <stdio.h>
 #include <stdlib.h>
+#include "rbtree.h"
 
 #if defined(_MSC_VER)
 #pragma comment(lib,"ws2_32")
 #pragma comment(lib,"mswsock")
 #endif
 
-#define BUFFER_SIZE 16384
+#define PACKAGE_SIZE 512
 
 typedef struct {
 	unsigned short id;       // identification number
@@ -36,21 +37,67 @@ typedef struct {
 	unsigned short classes;
 } DNS_QES;
 
-typedef struct cached_node {
-	struct cached_node* prev;
-	struct cached_node* next;
+typedef struct {
+	struct rbnode rb_name;
+	int ttl;
+	struct in_addr addr;
+	char domain[1];
+} DOMAIN_CACHE_NODE;
+
+typedef struct proxy_node {
+	struct rbnode rb_by_name;
 	unsigned int id;
 	unsigned short orgin;
 	struct sockaddr_in address;
-} CACHE_NODE;
+} PROXY_NODE;
+
+static struct {
+	struct rbtree rb_name;
+} domain_cache;
+
+static int name_search(const void* k, const struct rbnode* r)
+{
+	DOMAIN_CACHE_NODE *right;
+	right = rbtree_entry(r, DOMAIN_CACHE_NODE, rb_name);
+	return strcmp((const char*) k, right->domain);
+}
+
+static int name_compare(const struct rbnode* l, const struct rbnode* r)
+{
+	DOMAIN_CACHE_NODE *left, *right;
+	left = rbtree_entry(l, DOMAIN_CACHE_NODE, rb_name);
+	right = rbtree_entry(r, DOMAIN_CACHE_NODE, rb_name);
+	return strcmp(left->domain, right->domain);
+}
+
+void domain_cache_init()
+{
+	rbtree_init(&domain_cache.rb_name, name_search, name_compare);
+}
+
+DOMAIN_CACHE_NODE* search_domain(char* domain)
+{
+	struct rbnode *node;
+	node = rbtree_search(&domain_cache.rb_name, domain);
+	if(node == NULL)
+		return NULL;
+	return rbtree_entry(node, DOMAIN_CACHE_NODE, rb_name);
+}
+
+void process_query(SOCKET server, char* buffer, int size, struct sockaddr_in *source)
+{
+	DNS_HDR* hdr;
+
+	hdr = (DNS_HDR*)buffer;
+}
 
 int dnsproxy(unsigned int local_port, const char* remote_addr, unsigned int remote_port)
 {
-	int fds;
 	SOCKET server;
 	fd_set readfds;
 	struct sockaddr_in addr;
-	char buffer[BUFFER_SIZE];
+	char buffer[PACKAGE_SIZE];
+	int fds, addrlen, buflen;
 
 	server = socket(AF_INET, SOCK_DGRAM, 0);
 	if(server == INVALID_SOCKET) {
@@ -70,13 +117,11 @@ int dnsproxy(unsigned int local_port, const char* remote_addr, unsigned int remo
 	FD_SET(server, &readfds);
 	while(fds = select(0, &readfds, NULL, NULL, NULL), fds > 0) {
 		if(FD_ISSET(server, &readfds)) {
-			DNS_HDR* hdr;
-			int addrlen = sizeof(addr);
-			int buflen = recvfrom(server, buffer, BUFFER_SIZE, 0, (struct sockaddr*)&addr, &addrlen);
+			addrlen = sizeof(addr);
+			buflen = recvfrom(server, buffer, PACKAGE_SIZE, 0, (struct sockaddr*)&addr, &addrlen);
 			if(buflen < sizeof(DNS_HDR))
-				return;
-			hdr = (DNS_HDR*)buffer;
-			printf("id: %d\n", ntohs(hdr->id));
+				continue;
+			process_query(server, buffer, buflen, &addr);
 		}
 	}
 	return 0;
@@ -86,5 +131,7 @@ int main(int argc, char* argv[])
 {
 	WSADATA wsaData;
 	WSAStartup(MAKEWORD(2,2), &wsaData);
+
+	domain_cache_init();
 	return dnsproxy(53, "8.8.8.8", 53);
 }
