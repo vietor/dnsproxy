@@ -4,8 +4,11 @@
 #include <ws2tcpip.h>
 #include <windows.h>
 
+#include <time.h>
 #include <stdio.h>
 #include <stdlib.h>
+
+#include "list.h"
 #include "rbtree.h"
 
 #if defined(_MSC_VER)
@@ -40,17 +43,23 @@ typedef struct {
 
 typedef struct {
 	struct rbnode rb_name;
-	int ttl;
 	struct in_addr addr;
 	char domain[1];
 } DOMAIN_CACHE;
 
-typedef struct proxy_node {
-	struct rbnode rb_by_name;
-	unsigned int id;
-	unsigned short orgin;
-	struct sockaddr_in address;
-} PROXY_NODE;
-
 void domain_cache_init();
 DOMAIN_CACHE* domain_cache_search(char* domain);
+
+typedef struct {
+	struct rbnode rb_new;
+	struct rbnode rb_expire;
+	time_t expire;
+	unsigned short new_id;
+	unsigned short old_id;
+	struct sockaddr_in address;
+} PROXY_CACHE;
+
+void proxy_cache_init();
+PROXY_CACHE* proxy_cache_add(unsigned short old_id, struct sockaddr_in *address);
+PROXY_CACHE* proxy_cache_search(unsigned short new_id);
+void proxy_cache_del(PROXY_CACHE *cache);

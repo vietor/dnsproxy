@@ -3,7 +3,7 @@
 static struct {
 	unsigned int count;
 	struct rbtree rb_name;
-} domain_cache;
+} g_cache;
 
 static int name_search(const void* k, const struct rbnode* r)
 {
@@ -22,13 +22,14 @@ static int name_compare(const struct rbnode* l, const struct rbnode* r)
 
 void domain_cache_init()
 {
-	rbtree_init(&domain_cache.rb_name, name_search, name_compare);
+	g_cache.count = 0;
+	rbtree_init(&g_cache.rb_name, name_search, name_compare);
 }
 
 DOMAIN_CACHE* domain_cache_search(char* domain)
 {
 	struct rbnode *node;
-	node = rbtree_search(&domain_cache.rb_name, domain);
+	node = rbtree_search(&g_cache.rb_name, domain);
 	if(node == NULL)
 		return NULL;
 	return rbtree_entry(node, DOMAIN_CACHE, rb_name);
