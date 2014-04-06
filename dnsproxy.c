@@ -86,7 +86,7 @@ void process_query(PROXY_ENGINE *engine, char* buffer, int size, struct sockaddr
 	}
 
 	if(rhdr->rcode == 0) {
-		cache = proxy_cache_add(ntohs(hdr->id), source);
+		cache = proxy_cache_insert(ntohs(hdr->id), source);
 		if(cache == NULL)
 			rhdr->rcode = 2;
 		else {
@@ -114,12 +114,13 @@ void process_response(PROXY_ENGINE *engine, char* buffer, int size, struct socka
 	if(cache) {
 		hdr->id = htons(cache->old_id);
 		sendto(engine->local, buffer, size, 0, (struct sockaddr*)&cache->address, sizeof(struct sockaddr_in));
-		proxy_cache_del(cache);
+		proxy_cache_delete(cache);
 	}
 }
 
 int dnsproxy(unsigned short local_port, const char* remote_addr, unsigned short remote_port)
 {
+	struct timeval timeout;
 	struct sockaddr_in addr;
 	char buffer[PACKAGE_SIZE];
 	int nfds, fds, addrlen, buflen;
@@ -161,8 +162,12 @@ int dnsproxy(unsigned short local_port, const char* remote_addr, unsigned short 
 			nfds = (int)engine->local + 1;
 		else
 			nfds = (int)engine->remote + 1;
-		fds = select(nfds, &engine->readfds, NULL, NULL, NULL);
-		if(fds > 0) {
+		timeout.tv_sec = 5;
+		timeout.tv_usec = 0;
+		fds = select(nfds, &engine->readfds, NULL, NULL, &timeout);
+		if(fds == 0)
+			proxy_cache_clean();
+		else if(fds > 0) {
 			if(FD_ISSET(engine->local, &engine->readfds)) {
 				addrlen = sizeof(struct sockaddr_in);
 				buflen = recvfrom(engine->local, buffer, PACKAGE_SIZE, 0, (struct sockaddr*)&addr, &addrlen);
@@ -180,18 +185,71 @@ int dnsproxy(unsigned short local_port, const char* remote_addr, unsigned short 
 	return 0;
 }
 
+struct xoption options[] = {
+	{'v', "version", xargument_no, NULL, 'v'},
+	{'h', "help", xargument_no, NULL, 'h'},
+	{'p', "port", xargument_required, NULL, 'p'},
+	{'P', "remote-port", xargument_required, NULL, 'P'},
+	{'R', "remote-addr", xargument_required, NULL, 'R'},
+	{'f', "hosts-file", xargument_required, NULL, 'f'},
+	{0, NULL, xargument_no, NULL, 0},
+};
+
+static void display_help()
+{
+	printf("Usage: dnsproxy [options]\n"
+		"  -p <port> or --port=<port>\n"
+		"                       (local bind port)\n"
+		"  -R <ip> or --remote-addr=<ip>\n"
+		"                       (remote server ip address)\n"
+		"  -P <port> or --remote-port=<port>\n"
+		"                       (remote server port)\n"
+		"  -f <file> or --hosts-file=<file>\n"
+		"                       (user-defined hosts file)\n"
+		"  -h, --help           (print help and exit)\n"
+		"  -v, --version        (print version and exit)\n");
+};
+
 int main(int argc, char* argv[])
 {
 	WSADATA wsaData;
+	int opt, optind;
+	char *optarg;
+	const char* hosts_file = NULL;
 	const char* remote_addr = "8.8.8.8";
+	unsigned short local_port = 53, remote_port = 53;
 
-	if(argc > 2)
-		remote_addr = argv[1];
+	optind = 0;
+	opt = xgetopt(argc, argv, options, &optind, &optarg);
+	while(opt != -1) {
+		switch(opt) {
+		case 'p':
+			local_port = (unsigned short)atoi(optarg);
+			break;
+		case 'P':
+			remote_port = (unsigned short)atoi(optarg);
+			break;
+		case 'R':
+			remote_addr = optarg;
+			break;
+		case 'f':
+			hosts_file = optarg;
+			break;
+		case 'v':
+			printf("version: %s\n", VERSION);
+			return 0;
+		case 'h':
+		default:
+			display_help();
+			return -1;
+		}
+		opt = xgetopt(argc, argv, options, &optind, &optarg);
+	}
 
 	srand((unsigned int)time(NULL));
 	WSAStartup(MAKEWORD(2,2), &wsaData);
 
 	proxy_cache_init();
-	domain_cache_init();
-	return dnsproxy(53, remote_addr, 53);
+	domain_cache_init(hosts_file);
+	return dnsproxy(local_port, remote_addr, remote_port);
 }

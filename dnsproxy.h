@@ -1,3 +1,4 @@
+#define _CRT_SECURE_NO_WARNINGS
 
 #include <winsock2.h>
 #include <mswsock.h>
@@ -7,15 +8,18 @@
 #include <time.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 
 #include "list.h"
 #include "rbtree.h"
+#include "xgetopt.h"
 
 #if defined(_MSC_VER)
 #pragma comment(lib,"ws2_32")
 #pragma comment(lib,"mswsock")
 #endif
 
+#define VERSION "1.0.0"
 #define PACKAGE_SIZE 512
 
 typedef struct {
@@ -47,7 +51,7 @@ typedef struct {
 	char domain[1];
 } DOMAIN_CACHE;
 
-void domain_cache_init();
+void domain_cache_init(const char* file);
 DOMAIN_CACHE* domain_cache_search(char* domain);
 
 typedef struct {
@@ -60,6 +64,7 @@ typedef struct {
 } PROXY_CACHE;
 
 void proxy_cache_init();
-PROXY_CACHE* proxy_cache_add(unsigned short old_id, struct sockaddr_in *address);
 PROXY_CACHE* proxy_cache_search(unsigned short new_id);
-void proxy_cache_del(PROXY_CACHE *cache);
+PROXY_CACHE* proxy_cache_insert(unsigned short old_id, struct sockaddr_in *address);
+void proxy_cache_delete(PROXY_CACHE *cache);
+void proxy_cache_clean();
