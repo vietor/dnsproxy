@@ -1,3 +1,13 @@
+/*
+ * Copyright 2014, Vietor Liu <vietor.liu at gmail.com>
+ *
+ * This program is free software; you can redistribute it and/or
+ * modify it under the terms of the GNU General Public License
+ * as published by the Free Software Foundation; either version 2
+ * of the License, or any later version. For full terms that can be
+ * found in the LICENSE file.
+ */
+
 #define _CRT_SECURE_NO_WARNINGS
 
 #include <winsock2.h>
@@ -18,9 +28,6 @@
 #pragma comment(lib,"ws2_32")
 #pragma comment(lib,"mswsock")
 #endif
-
-#define VERSION "1.0.0"
-#define PACKAGE_SIZE 512
 
 typedef struct {
 	unsigned short id;       // identification number
@@ -63,7 +70,7 @@ typedef struct {
 	struct sockaddr_in address;
 } PROXY_CACHE;
 
-void proxy_cache_init();
+void proxy_cache_init(unsigned short timeout);
 PROXY_CACHE* proxy_cache_search(unsigned short new_id);
 PROXY_CACHE* proxy_cache_insert(unsigned short old_id, struct sockaddr_in *address);
 void proxy_cache_delete(PROXY_CACHE *cache);

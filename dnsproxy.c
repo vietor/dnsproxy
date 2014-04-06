@@ -1,10 +1,22 @@
+/*
+ * Copyright 2014, Vietor Liu <vietor.liu at gmail.com>
+ *
+ * This program is free software; you can redistribute it and/or
+ * modify it under the terms of the GNU General Public License
+ * as published by the Free Software Foundation; either version 2
+ * of the License, or any later version. For full terms that can be
+ * found in the LICENSE file.
+ */
+
 #include "dnsproxy.h"
 
+#define VERSION "1.0.0"
+#define PACKAGE_SIZE 512
+
 typedef struct {
-	SOCKET local;
-	SOCKET remote;
-	struct sockaddr_in remote_addr;
-	fd_set readfds;
+	SOCKET service;
+	SOCKET dns_udp;
+	struct sockaddr_in dns_addr;
 } PROXY_ENGINE;
 
 void process_query(PROXY_ENGINE *engine, char* buffer, int size, struct sockaddr_in *source)
@@ -80,7 +92,7 @@ void process_query(PROXY_ENGINE *engine, char* buffer, int size, struct sockaddr
 			pos += sizeof(unsigned short);
 			memcpy(pos, &dcache->addr, 4);
 			pos += 4;
-			sendto(engine->local, rbuffer, pos - rbuffer, 0, (struct sockaddr*)source, sizeof(struct sockaddr_in));
+			sendto(engine->service, rbuffer, pos - rbuffer, 0, (struct sockaddr*)source, sizeof(struct sockaddr_in));
 			return;
 		}
 	}
@@ -91,12 +103,12 @@ void process_query(PROXY_ENGINE *engine, char* buffer, int size, struct sockaddr
 			rhdr->rcode = 2;
 		else {
 			hdr->id = htons(cache->new_id);
-			if(sendto(engine->remote, buffer, size, 0, (struct sockaddr*)&engine->remote_addr, sizeof(struct sockaddr_in)) != size)
+			if(sendto(engine->dns_udp, buffer, size, 0, (struct sockaddr*)&engine->dns_addr, sizeof(struct sockaddr_in)) != size)
 				rhdr->rcode = 2;
 		}
 	}
 	if(rhdr->rcode != 0) {
-		sendto(engine->local, rbuffer, sizeof(DNS_HDR), 0, (struct sockaddr*)source, sizeof(struct sockaddr_in));
+		sendto(engine->service, rbuffer, sizeof(DNS_HDR), 0, (struct sockaddr*)source, sizeof(struct sockaddr_in));
 		return;
 	}
 }
@@ -113,7 +125,7 @@ void process_response(PROXY_ENGINE *engine, char* buffer, int size, struct socka
 	cache = proxy_cache_search(ntohs(hdr->id));
 	if(cache) {
 		hdr->id = htons(cache->old_id);
-		sendto(engine->local, buffer, size, 0, (struct sockaddr*)&cache->address, sizeof(struct sockaddr_in));
+		sendto(engine->service, buffer, size, 0, (struct sockaddr*)&cache->address, sizeof(struct sockaddr_in));
 		proxy_cache_delete(cache);
 	}
 }
@@ -122,19 +134,20 @@ int dnsproxy(unsigned short local_port, const char* remote_addr, unsigned short 
 {
 	struct timeval timeout;
 	struct sockaddr_in addr;
-	char buffer[PACKAGE_SIZE];
+	fd_set readfds;
 	int nfds, fds, addrlen, buflen;
 	PROXY_ENGINE *engine, _engine;
+	static char buffer[PACKAGE_SIZE];
 
 	engine = &_engine;
 	memset(&_engine, 0, sizeof(PROXY_ENGINE));
 
-	engine->remote_addr.sin_family = AF_INET;
-	engine->remote_addr.sin_addr.s_addr = inet_addr(remote_addr);
-	engine->remote_addr.sin_port = htons(remote_port);
+	engine->dns_addr.sin_family = AF_INET;
+	engine->dns_addr.sin_addr.s_addr = inet_addr(remote_addr);
+	engine->dns_addr.sin_port = htons(remote_port);
 
-	engine->local = socket(AF_INET, SOCK_DGRAM, 0);
-	if(engine->local == INVALID_SOCKET) {
+	engine->service = socket(AF_INET, SOCK_DGRAM, 0);
+	if(engine->service == INVALID_SOCKET) {
 		perror("create socket");
 		return -1;
 	}
@@ -142,41 +155,41 @@ int dnsproxy(unsigned short local_port, const char* remote_addr, unsigned short 
 	addr.sin_family = AF_INET;
 	addr.sin_addr.s_addr = INADDR_ANY;
 	addr.sin_port = htons(local_port);
-	if(bind(engine->local, (struct sockaddr*)&addr, sizeof(addr)) != 0) {
+	if(bind(engine->service, (struct sockaddr*)&addr, sizeof(addr)) != 0) {
 		perror("bind service port");
 		return -1;
 	}
 
-	engine->remote = socket(AF_INET, SOCK_DGRAM, 0);
-	if(engine->remote == INVALID_SOCKET) {
+	engine->dns_udp = socket(AF_INET, SOCK_DGRAM, 0);
+	if(engine->dns_udp == INVALID_SOCKET) {
 		perror("create socket");
 		return -1;
 	}
 
 	while(1) {
-		FD_ZERO(&engine->readfds);
-		FD_SET(engine->local, &engine->readfds);
-		FD_SET(engine->remote, &engine->readfds);	
+		FD_ZERO(&readfds);
+		FD_SET(engine->service, &readfds);
+		FD_SET(engine->dns_udp, &readfds);
 		nfds = 0;
-		if(engine->local > engine->remote)
-			nfds = (int)engine->local + 1;
+		if(engine->service > engine->dns_udp)
+			nfds = (int)engine->service + 1;
 		else
-			nfds = (int)engine->remote + 1;
+			nfds = (int)engine->dns_udp + 1;
 		timeout.tv_sec = 5;
 		timeout.tv_usec = 0;
-		fds = select(nfds, &engine->readfds, NULL, NULL, &timeout);
+		fds = select(nfds, &readfds, NULL, NULL, &timeout);
 		if(fds == 0)
 			proxy_cache_clean();
 		else if(fds > 0) {
-			if(FD_ISSET(engine->local, &engine->readfds)) {
+			if(FD_ISSET(engine->service, &readfds)) {
 				addrlen = sizeof(struct sockaddr_in);
-				buflen = recvfrom(engine->local, buffer, PACKAGE_SIZE, 0, (struct sockaddr*)&addr, &addrlen);
+				buflen = recvfrom(engine->service, buffer, PACKAGE_SIZE, 0, (struct sockaddr*)&addr, &addrlen);
 				if(buflen > sizeof(DNS_HDR))
 					process_query(engine, buffer, buflen, &addr);
 			}
-			if(FD_ISSET(engine->remote, &engine->readfds)) {
+			if(FD_ISSET(engine->dns_udp, &readfds)) {
 				addrlen = sizeof(struct sockaddr_in);
-				buflen = recvfrom(engine->remote, buffer, PACKAGE_SIZE, 0, (struct sockaddr*)&addr, &addrlen);
+				buflen = recvfrom(engine->dns_udp, buffer, PACKAGE_SIZE, 0, (struct sockaddr*)&addr, &addrlen);
 				if(buflen >= sizeof(DNS_HDR))
 					process_response(engine, buffer, buflen, &addr);
 			}
@@ -249,7 +262,7 @@ int main(int argc, char* argv[])
 	srand((unsigned int)time(NULL));
 	WSAStartup(MAKEWORD(2,2), &wsaData);
 
-	proxy_cache_init();
+	proxy_cache_init(5);
 	domain_cache_init(hosts_file);
 	return dnsproxy(local_port, remote_addr, remote_port);
 }

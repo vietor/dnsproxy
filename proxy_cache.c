@@ -1,8 +1,19 @@
+/*
+ * Copyright 2014, Vietor Liu <vietor.liu at gmail.com>
+ *
+ * This program is free software; you can redistribute it and/or
+ * modify it under the terms of the GNU General Public License
+ * as published by the Free Software Foundation; either version 2
+ * of the License, or any later version. For full terms that can be
+ * found in the LICENSE file.
+ */
+
 #include "dnsproxy.h"
 
 static struct {
 	unsigned int count;
 	unsigned short seq;
+	unsigned short timeout;
 	struct rbtree rb_new;
 	struct rbtree rb_expire;
 } g_cache;
@@ -30,9 +41,10 @@ static int expire_compare(const struct rbnode* l, const struct rbnode* r)
 	return (int)(left->expire - right->expire);
 }
 
-void proxy_cache_init()
+void proxy_cache_init(unsigned short timeout)
 {
 	g_cache.count = 0;
+	g_cache.timeout = timeout;
 	g_cache.seq = (unsigned short)rand();
 	rbtree_init(&g_cache.rb_new, new_search, new_compare);
 	rbtree_init(&g_cache.rb_expire, NULL, expire_compare);
@@ -53,7 +65,7 @@ PROXY_CACHE* proxy_cache_insert(unsigned short old_id, struct sockaddr_in *addre
 	if(cache == NULL)
 		return NULL;
 	cache->new_id = ++g_cache.seq;
-	cache->expire = time(NULL) + 8;
+	cache->expire = time(NULL) + g_cache.timeout;
 	cache->old_id = old_id;
 	memcpy(&cache->address, address, sizeof(struct sockaddr_in));
 	++g_cache.count;
@@ -77,7 +89,7 @@ void proxy_cache_clean()
 	struct rbnode *node;
 
 	time(&current);
-	while(rbtree_empty(&g_cache.rb_expire)) {
+	while(!rbtree_empty(&g_cache.rb_expire)) {
 		node = rbtree_first(&g_cache.rb_expire);
 		cache = rbtree_entry(node, PROXY_CACHE, rb_expire);
 		if(cache->expire < current)
