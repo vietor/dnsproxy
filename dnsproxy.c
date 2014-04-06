@@ -38,6 +38,8 @@ void process_query(PROXY_ENGINE *engine, char* buffer, int size, struct sockaddr
 	rhdr->qr = 1;
 	q_len = 0;
 	q_count = ntohs(hdr->q_count);
+	qes = NULL;
+	head = NULL;
 	if(hdr->qr != 0 || hdr->tc != 0 || q_count < 1)
 		rhdr->rcode = 1;
 	else {
@@ -223,13 +225,13 @@ static void display_help()
 		"  -v, --version        (print version and exit)\n");
 };
 
-int main(int argc, char* argv[])
+int main(int argc, const char* argv[])
 {
 	WSADATA wsaData;
 	int opt, optind;
-	char *optarg;
-	const char* hosts_file = NULL;
-	const char* remote_addr = "8.8.8.8";
+	const char *optarg;
+	const char *hosts_file = NULL;
+	const char *remote_addr = "8.8.8.8";
 	unsigned short local_port = 53, remote_port = 53;
 
 	optind = 0;
