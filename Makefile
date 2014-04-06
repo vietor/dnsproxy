@@ -1,4 +1,4 @@
-# Makefile for AE-TEST
+# Makefile for dnsproxy
 
 uname_S := $(shell sh -c 'uname -s 2>/dev/null || echo not')
 
@@ -11,32 +11,20 @@ INCLUDES = $(wildcard *.h)
 SOURCES = $(wildcard *.c)
 OBJS = $(patsubst %.c,%.o,$(SOURCES))
 
-ifeq ($(uname_S),Linux)
-	CFLAGS +=
-	LDFLAGS +=
-else
-ifeq ($(uname_S),FreeBSD)
-	CFLAGS +=
-	LDFLAGS +=
-else
 ifneq (,$(findstring MINGW,$(uname_S)))
 	CFLAGS +=
 	LDFLAGS += -lws2_32 -lmswsock
 	TARGET := $(TARGET).exe
-else
-	$(error Unsupport platform for compile)
-endif
-endif
 endif
 
-all: build
+all: $(TARGET)
 
 %.o: %.c
 	$(CC) $(CFLAGS) -c -o $@ $<
 
 $(OBJS): $(SOURCES) $(INCLUDES)
 
-build: $(OBJS)
+$(TARGET): $(OBJS)
 	$(CC) -o $(TARGET) $(CFLAGS) $(OBJS) $(LDFLAGS)
 
 clean:
