@@ -15,6 +15,7 @@
 #include <mswsock.h>
 #include <ws2tcpip.h>
 #include <windows.h>
+#define socklen_t int
 #if defined(_MSC_VER)
 #pragma comment(lib,"ws2_32")
 #pragma comment(lib,"mswsock")

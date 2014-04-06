@@ -137,10 +137,11 @@ int dnsproxy(unsigned short local_port, const char* remote_addr, unsigned short 
 #ifndef _WIN32
 	static const int one = 1;
 #endif
-	struct timeval timeout;
-	struct sockaddr_in addr;
 	fd_set readfds;
-	int nfds, fds, addrlen, buflen;
+	struct timeval timeout;
+	socklen_t addrlen;
+	struct sockaddr_in addr;
+	int maxfd, fds, buflen;
 	PROXY_ENGINE *engine, _engine;
 	static char buffer[PACKAGE_SIZE];
 
@@ -178,14 +179,14 @@ int dnsproxy(unsigned short local_port, const char* remote_addr, unsigned short 
 		FD_ZERO(&readfds);
 		FD_SET(engine->service, &readfds);
 		FD_SET(engine->dns_udp, &readfds);
-		nfds = 0;
+		maxfd = 0;
 		if(engine->service > engine->dns_udp)
-			nfds = (int)engine->service + 1;
+			maxfd = (int)engine->service;
 		else
-			nfds = (int)engine->dns_udp + 1;
+			maxfd = (int)engine->dns_udp;
 		timeout.tv_sec = 5;
 		timeout.tv_usec = 0;
-		fds = select(nfds, &readfds, NULL, NULL, &timeout);
+		fds = select(maxfd + 1, &readfds, NULL, NULL, &timeout);
 		if(fds == 0)
 			proxy_cache_clean();
 		else if(fds > 0) {

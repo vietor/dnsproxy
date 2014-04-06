@@ -12,7 +12,7 @@
 
 static struct {
 	unsigned int count;
-	unsigned short seq;
+	unsigned short index;
 	unsigned short timeout;
 	struct rbtree rb_new;
 	struct rbtree rb_expire;
@@ -22,7 +22,7 @@ static int new_search(const void* k, const struct rbnode* r)
 {
 	PROXY_CACHE *right;
 	right = rbtree_entry(r, PROXY_CACHE, rb_new);
-	return (unsigned short)k - right->new_id;
+	return (int)(unsigned short)k - right->new_id;
 }
 
 static int new_compare(const struct rbnode* l, const struct rbnode* r)
@@ -30,7 +30,7 @@ static int new_compare(const struct rbnode* l, const struct rbnode* r)
 	PROXY_CACHE *left, *right;
 	left = rbtree_entry(l, PROXY_CACHE, rb_new);
 	right = rbtree_entry(r, PROXY_CACHE, rb_new);
-	return left->new_id - right->new_id;
+	return (int)left->new_id - right->new_id;
 }
 
 static int expire_compare(const struct rbnode* l, const struct rbnode* r)
@@ -45,7 +45,7 @@ void proxy_cache_init(unsigned short timeout)
 {
 	g_cache.count = 0;
 	g_cache.timeout = timeout;
-	g_cache.seq = (unsigned short)rand();
+	g_cache.index = (unsigned short)rand();
 	rbtree_init(&g_cache.rb_new, new_search, new_compare);
 	rbtree_init(&g_cache.rb_expire, NULL, expire_compare);
 }
@@ -54,7 +54,7 @@ PROXY_CACHE* proxy_cache_search(unsigned short new_id)
 {
 	struct rbnode *node;
 	node = rbtree_search(&g_cache.rb_new, (void*)new_id);
-	if(node == NULL)
+	if(node == RBNODE_NULL)
 		return NULL;
 	return rbtree_entry(node, PROXY_CACHE, rb_new);
 }
@@ -64,7 +64,7 @@ PROXY_CACHE* proxy_cache_insert(unsigned short old_id, struct sockaddr_in *addre
 	PROXY_CACHE *cache = (PROXY_CACHE*)calloc(1, sizeof(PROXY_CACHE));
 	if(cache == NULL)
 		return NULL;
-	cache->new_id = ++g_cache.seq;
+	cache->new_id = ++g_cache.index;
 	cache->expire = time(NULL) + g_cache.timeout;
 	cache->old_id = old_id;
 	memcpy(&cache->address, address, sizeof(struct sockaddr_in));
