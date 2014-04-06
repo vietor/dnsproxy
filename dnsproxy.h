@@ -8,12 +8,32 @@
  * found in the LICENSE file.
  */
 
+#ifdef _WIN32
+#define WIN32_LEAN_AND_MEAN
 #define _CRT_SECURE_NO_WARNINGS
-
 #include <winsock2.h>
 #include <mswsock.h>
 #include <ws2tcpip.h>
 #include <windows.h>
+#if defined(_MSC_VER)
+#pragma comment(lib,"ws2_32")
+#pragma comment(lib,"mswsock")
+#endif
+#else
+#include <sys/types.h>
+#include <sys/time.h>
+#include <sys/ioctl.h>
+#include <sys/socket.h>
+#include <netinet/in.h>
+#include <netinet/ip.h>
+#include <arpa/inet.h>
+#include <netdb.h>
+#include <errno.h>
+#include <unistd.h>
+#define SOCKET int
+#define INVALID_SOCKET -1
+#define closesocket close
+#endif
 
 #include <time.h>
 #include <stdio.h>
@@ -23,11 +43,6 @@
 #include "list.h"
 #include "rbtree.h"
 #include "xgetopt.h"
-
-#if defined(_MSC_VER)
-#pragma comment(lib,"ws2_32")
-#pragma comment(lib,"mswsock")
-#endif
 
 typedef struct {
 	unsigned short id;       // identification number

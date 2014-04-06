@@ -134,6 +134,9 @@ void process_response(PROXY_ENGINE *engine, char* buffer, int size, struct socka
 
 int dnsproxy(unsigned short local_port, const char* remote_addr, unsigned short remote_port)
 {
+#ifndef _WIN32
+	static const int one = 1;
+#endif
 	struct timeval timeout;
 	struct sockaddr_in addr;
 	fd_set readfds;
@@ -153,6 +156,9 @@ int dnsproxy(unsigned short local_port, const char* remote_addr, unsigned short 
 		perror("create socket");
 		return -1;
 	}
+#ifndef _WIN32
+	setsockopt(engine->service, SOL_SOCKET, SO_REUSEADDR, &one, sizeof(one));
+#endif
 	memset(&addr, 0, sizeof(addr));
 	addr.sin_family = AF_INET;
 	addr.sin_addr.s_addr = INADDR_ANY;
@@ -227,7 +233,9 @@ static void display_help()
 
 int main(int argc, const char* argv[])
 {
+#ifdef _WIN32
 	WSADATA wsaData;
+#endif
 	int opt, optind;
 	const char *optarg;
 	const char *hosts_file = NULL;
@@ -262,7 +270,9 @@ int main(int argc, const char* argv[])
 	}
 
 	srand((unsigned int)time(NULL));
+#ifdef _WIN32
 	WSAStartup(MAKEWORD(2,2), &wsaData);
+#endif
 
 	proxy_cache_init(5);
 	domain_cache_init(hosts_file);
