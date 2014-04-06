@@ -19,16 +19,24 @@ typedef struct {
 	struct sockaddr_in dns_addr;
 } PROXY_ENGINE;
 
-void process_query(PROXY_ENGINE *engine, char* buffer, int size, struct sockaddr_in *source)
+void process_query(PROXY_ENGINE *engine)
 {
 	DNS_QES *qes, *rqes;
 	DNS_HDR *hdr, *rhdr;
 	PROXY_CACHE *cache;
 	DOMAIN_CACHE *dcache;
+	socklen_t addrlen;
+	struct sockaddr_in source;
 	char *pos, *head, *rear;
 	char domain[PACKAGE_SIZE];
+	char buffer[PACKAGE_SIZE];
 	char rbuffer[PACKAGE_SIZE];
-	int i, len, q_count, q_len;
+	int size, len, dlen, q_count, q_len;
+
+	addrlen = sizeof(struct sockaddr_in);
+	size = recvfrom(engine->service, buffer, PACKAGE_SIZE, 0, (struct sockaddr*)&source, &addrlen);
+	if(size <= sizeof(DNS_HDR))
+		return;
 
 	hdr = (DNS_HDR*)buffer;
 	rhdr = (DNS_HDR*)rbuffer;
@@ -45,7 +53,7 @@ void process_query(PROXY_ENGINE *engine, char* buffer, int size, struct sockaddr
 	else {
 		head = buffer + sizeof(DNS_HDR);
 		rear = buffer + size;
-		i = 0;
+		dlen = 0;
 		memset(domain, 0, PACKAGE_SIZE);
 		pos = head;
 		while(pos < rear) {
@@ -55,11 +63,10 @@ void process_query(PROXY_ENGINE *engine, char* buffer, int size, struct sockaddr
 				break;
 			}
 			if(len > 0) {
-				if(i > 0)
-					domain[i++] = '.';
-				memcpy(domain + i, pos, len);
-				i+= len;
-				pos += len;
+				if(dlen > 0)
+					domain[dlen++] = '.';
+				while(len-- > 0)
+					domain[dlen++] = *pos++;
 			}
 			else {
 				qes = (DNS_QES*) pos;
@@ -92,15 +99,15 @@ void process_query(PROXY_ENGINE *engine, char* buffer, int size, struct sockaddr
 			pos += sizeof(unsigned int);
 			*(unsigned short*)pos = htons(4);
 			pos += sizeof(unsigned short);
-			memcpy(pos, &dcache->addr, 4);
-			pos += 4;
-			sendto(engine->service, rbuffer, pos - rbuffer, 0, (struct sockaddr*)source, sizeof(struct sockaddr_in));
+			*(unsigned int*)pos = dcache->addr.s_addr;
+			pos += sizeof(unsigned int);
+			sendto(engine->service, rbuffer, pos - rbuffer, 0, (struct sockaddr*)&source, sizeof(struct sockaddr_in));
 			return;
 		}
 	}
 
 	if(rhdr->rcode == 0) {
-		cache = proxy_cache_insert(ntohs(hdr->id), source);
+		cache = proxy_cache_insert(ntohs(hdr->id), &source);
 		if(cache == NULL)
 			rhdr->rcode = 2;
 		else {
@@ -110,15 +117,24 @@ void process_query(PROXY_ENGINE *engine, char* buffer, int size, struct sockaddr
 		}
 	}
 	if(rhdr->rcode != 0) {
-		sendto(engine->service, rbuffer, sizeof(DNS_HDR), 0, (struct sockaddr*)source, sizeof(struct sockaddr_in));
+		sendto(engine->service, rbuffer, sizeof(DNS_HDR), 0, (struct sockaddr*)&source, sizeof(struct sockaddr_in));
 		return;
 	}
 }
 
-void process_response(PROXY_ENGINE *engine, char* buffer, int size, struct sockaddr_in *source)
+void process_response(PROXY_ENGINE *engine)
 {
 	DNS_HDR *hdr;
 	PROXY_CACHE * cache;
+	int size;
+	socklen_t addrlen;
+	struct sockaddr_in source;
+	char buffer[PACKAGE_SIZE];
+
+	addrlen = sizeof(struct sockaddr_in);
+	size = recvfrom(engine->dns_udp, buffer, PACKAGE_SIZE, 0, (struct sockaddr*)&source, &addrlen);
+	if(size < sizeof(DNS_HDR))
+		return;
 
 	hdr = (DNS_HDR*)buffer;
 	if(hdr->qr != 1 || hdr->tc != 0 || ntohs(hdr->q_count) <1 || ntohs(hdr->ans_count) < 1)
@@ -137,13 +153,11 @@ int dnsproxy(unsigned short local_port, const char* remote_addr, unsigned short 
 #ifndef _WIN32
 	static const int one = 1;
 #endif
+	int maxfd, fds;
 	fd_set readfds;
 	struct timeval timeout;
-	socklen_t addrlen;
 	struct sockaddr_in addr;
-	int maxfd, fds, buflen;
 	PROXY_ENGINE *engine, _engine;
-	static char buffer[PACKAGE_SIZE];
 
 	engine = &_engine;
 	memset(&_engine, 0, sizeof(PROXY_ENGINE));
@@ -190,18 +204,10 @@ int dnsproxy(unsigned short local_port, const char* remote_addr, unsigned short 
 		if(fds == 0)
 			proxy_cache_clean();
 		else if(fds > 0) {
-			if(FD_ISSET(engine->service, &readfds)) {
-				addrlen = sizeof(struct sockaddr_in);
-				buflen = recvfrom(engine->service, buffer, PACKAGE_SIZE, 0, (struct sockaddr*)&addr, &addrlen);
-				if(buflen > sizeof(DNS_HDR))
-					process_query(engine, buffer, buflen, &addr);
-			}
-			if(FD_ISSET(engine->dns_udp, &readfds)) {
-				addrlen = sizeof(struct sockaddr_in);
-				buflen = recvfrom(engine->dns_udp, buffer, PACKAGE_SIZE, 0, (struct sockaddr*)&addr, &addrlen);
-				if(buflen >= sizeof(DNS_HDR))
-					process_response(engine, buffer, buflen, &addr);
-			}
+			if(FD_ISSET(engine->service, &readfds))
+				process_query(engine);
+			if(FD_ISSET(engine->dns_udp, &readfds))
+				process_response(engine);
 		}
 	}
 	return 0;
