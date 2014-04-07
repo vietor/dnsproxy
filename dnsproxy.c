@@ -378,11 +378,13 @@ int main(int argc, const char* argv[])
 		opt = xgetopt(argc, argv, options, &optind, &optarg);
 	}
 
-	srand((unsigned int)time(NULL));
 #ifdef _WIN32
 	WSAStartup(MAKEWORD(2,2), &wsaData);
+#else
+	signal(SIGPIPE, SIG_IGN);
 #endif
 
+	srand((unsigned int)time(NULL));
 	transport_cache_init(5);
 	domain_cache_init(hosts_file);
 	return dnsproxy(local_port, remote_addr, remote_port, remote_tcp);

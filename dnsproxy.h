@@ -31,6 +31,7 @@
 #include <netdb.h>
 #include <errno.h>
 #include <unistd.h>
+#include <signal.h>
 #define SOCKET int
 #define INVALID_SOCKET -1
 #define closesocket close
