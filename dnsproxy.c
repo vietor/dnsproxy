@@ -136,7 +136,7 @@ static void process_query(PROXY_ENGINE *engine)
 					rhdr->rcode = 2;
 				else{
 					len = size + sizeof(unsigned short);
-					*(unsigned short*)qbuffer = htons(size);
+					*(unsigned short*)qbuffer = htons((unsigned short)size);
 					if(send(engine->dns_tcp, qbuffer, len, 0) != len) {
 						closesocket(engine->dns_tcp);
 						engine->dns_tcp = INVALID_SOCKET;
@@ -323,13 +323,13 @@ static void display_help()
 {
 	printf("Usage: dnsproxy [options]\n"
 		"  -p <port> or --port=<port>\n"
-		"                       (local bind port)\n"
+		"                       (local bind port, default 53)\n"
 		"  -R <ip> or --remote-addr=<ip>\n"
-		"                       (remote server ip address)\n"
+		"                       (remote server ip, default 8.8.8.8)\n"
 		"  -P <port> or --remote-port=<port>\n"
-		"                       (remote server port)\n"
+		"                       (remote server port, default 53)\n"
 		"  -T or --remote-tcp\n"
-		"                       (connect remote server in tcp)\n"
+		"                       (connect remote server in tcp, default no)\n"
 		"  -f <file> or --hosts-file=<file>\n"
 		"                       (user-defined hosts file)\n"
 		"  -h, --help           (print help and exit)\n"
