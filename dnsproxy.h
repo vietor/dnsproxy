@@ -42,9 +42,9 @@
 #include <stdlib.h>
 #include <string.h>
 
-#include "list.h"
-#include "rbtree.h"
-#include "xgetopt.h"
+#include "embed/list.h"
+#include "embed/rbtree.h"
+#include "embed/xgetopt.h"
 
 typedef struct {
 	unsigned short id;       // identification number

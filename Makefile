@@ -7,8 +7,8 @@ CFLAGS = -O2 -Wall -Wno-int-to-pointer-cast -Wno-pointer-to-int-cast
 LDFLAGS =
 
 TARGET = dnsproxy
-INCLUDES = $(wildcard *.h)
-SOURCES = $(wildcard *.c)
+INCLUDES = $(wildcard *.h embed/*.h)
+SOURCES = $(wildcard *.c embed/*.c)
 OBJS = $(patsubst %.c,%.o,$(SOURCES))
 
 ifneq (,$(findstring MINGW,$(uname_S)))
@@ -28,4 +28,4 @@ $(TARGET): $(OBJS)
 	$(CC) -o $(TARGET) $(CFLAGS) $(OBJS) $(LDFLAGS)
 
 clean:
-	$(RM) *.o *~ $(TARGET)
+	$(RM) *.o embed/*.o *~ $(TARGET)
