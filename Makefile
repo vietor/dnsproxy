@@ -3,8 +3,12 @@
 uname_S := $(shell sh -c 'uname -s 2>/dev/null || echo not')
 
 CC = gcc
+RM = rm -f
+CP = cp -f
+
 CFLAGS = -O2 -Wall -Wno-int-to-pointer-cast -Wno-pointer-to-int-cast
 LDFLAGS =
+PREFIX = /usr
 
 TARGET = dnsproxy
 INCLUDES = $(wildcard *.h embed/*.h)
@@ -29,3 +33,9 @@ $(TARGET): $(OBJS)
 
 clean:
 	$(RM) *.o embed/*.o *~ $(TARGET)
+
+install:
+	$(CP) $(TARGET) $(PREFIX)/bin
+
+uninstall:
+	$(RM) $(PREFIX)/bin/$(TARGET)
