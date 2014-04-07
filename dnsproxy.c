@@ -27,7 +27,7 @@ static void process_query(PROXY_ENGINE *engine)
 {
 	DNS_QES *qes, *rqes;
 	DNS_HDR *hdr, *rhdr;
-	PROXY_CACHE *cache;
+	TRANSPORT_CACHE *cache;
 	DOMAIN_CACHE *dcache;
 	socklen_t addrlen;
 	struct sockaddr_in source;
@@ -111,7 +111,7 @@ static void process_query(PROXY_ENGINE *engine)
 	}
 
 	if(rhdr->rcode == 0) {
-		cache = proxy_cache_insert(ntohs(hdr->id), &source);
+		cache = transport_cache_insert(ntohs(hdr->id), &source);
 		if(cache == NULL)
 			rhdr->rcode = 2;
 		else {
@@ -155,17 +155,17 @@ static void process_query(PROXY_ENGINE *engine)
 static void process_response(PROXY_ENGINE *engine, char* buffer, int size)
 {
 	DNS_HDR *hdr;
-	PROXY_CACHE * cache;
+	TRANSPORT_CACHE *cache;
 
 	hdr = (DNS_HDR*)buffer;
 	if(hdr->qr != 1 || hdr->tc != 0 || ntohs(hdr->q_count) <1 || ntohs(hdr->ans_count) < 1)
 		return;
 
-	cache = proxy_cache_search(ntohs(hdr->id));
+	cache = transport_cache_search(ntohs(hdr->id));
 	if(cache) {
 		hdr->id = htons(cache->old_id);
 		sendto(engine->service, buffer, size, 0, (struct sockaddr*)&cache->address, sizeof(struct sockaddr_in));
-		proxy_cache_delete(cache);
+		transport_cache_delete(cache);
 	}
 }
 
@@ -290,7 +290,7 @@ static int dnsproxy(unsigned short local_port, const char* remote_addr, unsigned
 		timeout.tv_usec = 0;
 		fds = select(maxfd + 1, &readfds, NULL, NULL, &timeout);
 		if(fds == 0)
-			proxy_cache_clean();
+			transport_cache_clean();
 		else if(fds > 0) {
 			if(!engine->use_tcp) {
 				if(FD_ISSET(engine->dns_udp, &readfds))
@@ -383,7 +383,7 @@ int main(int argc, const char* argv[])
 	WSAStartup(MAKEWORD(2,2), &wsaData);
 #endif
 
-	proxy_cache_init(5);
+	transport_cache_init(5);
 	domain_cache_init(hosts_file);
 	return dnsproxy(local_port, remote_addr, remote_port, remote_tcp);
 }

@@ -85,10 +85,10 @@ typedef struct {
 	unsigned short new_id;
 	unsigned short old_id;
 	struct sockaddr_in address;
-} PROXY_CACHE;
+} TRANSPORT_CACHE;
 
-void proxy_cache_init(unsigned short timeout);
-PROXY_CACHE* proxy_cache_search(unsigned short new_id);
-PROXY_CACHE* proxy_cache_insert(unsigned short old_id, struct sockaddr_in *address);
-void proxy_cache_delete(PROXY_CACHE *cache);
-void proxy_cache_clean();
+void transport_cache_init(unsigned short timeout);
+TRANSPORT_CACHE* transport_cache_search(unsigned short new_id);
+TRANSPORT_CACHE* transport_cache_insert(unsigned short old_id, struct sockaddr_in *address);
+void transport_cache_delete(TRANSPORT_CACHE *cache);
+void transport_cache_clean();

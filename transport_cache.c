@@ -20,28 +20,28 @@ static struct {
 
 static int new_search(const void* k, const struct rbnode* r)
 {
-	PROXY_CACHE *right;
-	right = rbtree_entry(r, PROXY_CACHE, rb_new);
+	TRANSPORT_CACHE *right;
+	right = rbtree_entry(r, TRANSPORT_CACHE, rb_new);
 	return (int)(unsigned short)k - right->new_id;
 }
 
 static int new_compare(const struct rbnode* l, const struct rbnode* r)
 {
-	PROXY_CACHE *left, *right;
-	left = rbtree_entry(l, PROXY_CACHE, rb_new);
-	right = rbtree_entry(r, PROXY_CACHE, rb_new);
+	TRANSPORT_CACHE *left, *right;
+	left = rbtree_entry(l, TRANSPORT_CACHE, rb_new);
+	right = rbtree_entry(r, TRANSPORT_CACHE, rb_new);
 	return (int)left->new_id - right->new_id;
 }
 
 static int expire_compare(const struct rbnode* l, const struct rbnode* r)
 {
-	PROXY_CACHE *left, *right;
-	left = rbtree_entry(l, PROXY_CACHE, rb_expire);
-	right = rbtree_entry(r, PROXY_CACHE, rb_expire);
+	TRANSPORT_CACHE *left, *right;
+	left = rbtree_entry(l, TRANSPORT_CACHE, rb_expire);
+	right = rbtree_entry(r, TRANSPORT_CACHE, rb_expire);
 	return (int)(left->expire - right->expire);
 }
 
-void proxy_cache_init(unsigned short timeout)
+void transport_cache_init(unsigned short timeout)
 {
 	g_cache.count = 0;
 	g_cache.timeout = timeout;
@@ -50,18 +50,18 @@ void proxy_cache_init(unsigned short timeout)
 	rbtree_init(&g_cache.rb_expire, NULL, expire_compare);
 }
 
-PROXY_CACHE* proxy_cache_search(unsigned short new_id)
+TRANSPORT_CACHE* transport_cache_search(unsigned short new_id)
 {
 	struct rbnode *node;
 	node = rbtree_search(&g_cache.rb_new, (void*)new_id);
 	if(node == RBNODE_NULL)
 		return NULL;
-	return rbtree_entry(node, PROXY_CACHE, rb_new);
+	return rbtree_entry(node, TRANSPORT_CACHE, rb_new);
 }
 
-PROXY_CACHE* proxy_cache_insert(unsigned short old_id, struct sockaddr_in *address)
+TRANSPORT_CACHE* transport_cache_insert(unsigned short old_id, struct sockaddr_in *address)
 {
-	PROXY_CACHE *cache = (PROXY_CACHE*)calloc(1, sizeof(PROXY_CACHE));
+	TRANSPORT_CACHE *cache = (TRANSPORT_CACHE*)calloc(1, sizeof(TRANSPORT_CACHE));
 	if(cache == NULL)
 		return NULL;
 	cache->new_id = ++g_cache.index;
@@ -74,7 +74,7 @@ PROXY_CACHE* proxy_cache_insert(unsigned short old_id, struct sockaddr_in *addre
 	return cache;
 }
 
-void proxy_cache_delete(PROXY_CACHE *cache)
+void transport_cache_delete(TRANSPORT_CACHE *cache)
 {
 	--g_cache.count;
 	rbtree_delete(&g_cache.rb_new, &cache->rb_new);
@@ -82,18 +82,18 @@ void proxy_cache_delete(PROXY_CACHE *cache)
 	free(cache);
 }
 
-void proxy_cache_clean()
+void transport_cache_clean()
 {
 	time_t current;
-	PROXY_CACHE* cache;
+	TRANSPORT_CACHE* cache;
 	struct rbnode *node;
 
 	time(&current);
 	while(!rbtree_empty(&g_cache.rb_expire)) {
 		node = rbtree_first(&g_cache.rb_expire);
-		cache = rbtree_entry(node, PROXY_CACHE, rb_expire);
+		cache = rbtree_entry(node, TRANSPORT_CACHE, rb_expire);
 		if(cache->expire < current)
 			break;
-		proxy_cache_delete(cache);
+		transport_cache_delete(cache);
 	}
 }
