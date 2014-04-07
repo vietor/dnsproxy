@@ -55,7 +55,7 @@ void domain_cache_init(const char* hosts_file)
 	struct in_addr addr;
 	DOMAIN_CACHE* cache;
 	char line[8192];
-	char *rear, *rlimit, *ip, *domain;
+	char *rear, *rlimit, *ip, *domain, *pos;
 
 	g_cache.count = 0;
 	rbtree_init(&g_cache.rb_name, name_search, name_compare);
@@ -91,7 +91,10 @@ void domain_cache_init(const char* hosts_file)
 				if(cache == NULL) {
 					cache = (DOMAIN_CACHE*)calloc(1, sizeof(DOMAIN_CACHE) + strlen(domain));
 					memcpy(&cache->addr, &addr, sizeof(struct in_addr));
-					strcpy(cache->domain, domain);
+					pos = cache->domain;
+					while(*domain != '\0')
+						*pos++ = (char)tolower(*domain++);
+					*pos = '\0';
 					++g_cache.count;
 					rbtree_insert(&g_cache.rb_name, &cache->rb_name);
 				}

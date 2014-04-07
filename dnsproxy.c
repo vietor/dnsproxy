@@ -70,7 +70,7 @@ static void process_query(PROXY_ENGINE *engine)
 				if(dlen > 0)
 					domain[dlen++] = '.';
 				while(len-- > 0)
-					domain[dlen++] = *pos++;
+					domain[dlen++] = (char)tolower(*pos++);
 			}
 			else {
 				qes = (DNS_QES*) pos;
