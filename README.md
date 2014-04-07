@@ -13,6 +13,8 @@ $ make && make install
 
 ```bash
 Usage: dnsproxy [options]
+  -d or --daemon
+                       (daemon mode)
   -p <port> or --port=<port>
                        (local bind port, default 53)
   -R <ip> or --remote-addr=<ip>

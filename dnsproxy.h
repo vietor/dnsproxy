@@ -9,17 +9,15 @@
  */
 
 #ifdef _WIN32
-#define WIN32_LEAN_AND_MEAN
+#define _WIN32_WINNT 0x0501
 #define _CRT_SECURE_NO_WARNINGS
+#define WIN32_LEAN_AND_MEAN
 #include <winsock2.h>
 #include <mswsock.h>
 #include <ws2tcpip.h>
 #include <windows.h>
+#include <io.h>
 #define socklen_t int
-#if defined(_MSC_VER)
-#pragma comment(lib,"ws2_32")
-#pragma comment(lib,"mswsock")
-#endif
 #else
 #include <sys/types.h>
 #include <sys/time.h>

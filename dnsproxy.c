@@ -13,6 +13,11 @@
 #define VERSION "1.0.0"
 #define PACKAGE_SIZE 512
 
+#if defined(_MSC_VER)
+#pragma comment(lib,"ws2_32")
+#pragma comment(lib,"mswsock")
+#endif
+
 typedef struct {
 	SOCKET service;
 	int use_tcp;
@@ -311,6 +316,7 @@ static int dnsproxy(unsigned short local_port, const char* remote_addr, unsigned
 struct xoption options[] = {
 	{'v', "version", xargument_no, NULL, 'v'},
 	{'h', "help", xargument_no, NULL, 'h'},
+	{'d', "daemon", xargument_no, NULL, 'd'},
 	{'p', "port", xargument_required, NULL, 'p'},
 	{'T', "remote-tcp", xargument_no, NULL, 'T'},
 	{'P', "remote-port", xargument_required, NULL, 'P'},
@@ -322,6 +328,8 @@ struct xoption options[] = {
 static void display_help()
 {
 	printf("Usage: dnsproxy [options]\n"
+		"  -d or --daemon\n"
+		"                       (daemon mode)\n"
 		"  -p <port> or --port=<port>\n"
 		"                       (local bind port, default 53)\n"
 		"  -R <ip> or --remote-addr=<ip>\n"
@@ -343,7 +351,9 @@ int main(int argc, const char* argv[])
 #endif
 	int opt, optind;
 	const char *optarg;
+	int use_daemon = 0;
 	int remote_tcp = 0;
+	int transport_timeout = 5;
 	const char *hosts_file = NULL;
 	const char *remote_addr = "8.8.8.8";
 	unsigned short local_port = 53, remote_port = 53;
@@ -367,6 +377,9 @@ int main(int argc, const char* argv[])
 		case 'f':
 			hosts_file = optarg;
 			break;
+		case 'd':
+			use_daemon = 1;
+			break;
 		case 'v':
 			printf("version: %s\n", VERSION);
 			return 0;
@@ -380,12 +393,53 @@ int main(int argc, const char* argv[])
 
 #ifdef _WIN32
 	WSAStartup(MAKEWORD(2,2), &wsaData);
+	if(use_daemon) {
+		freopen("NUL", "r", stdin);
+		freopen("NUL", "w", stdout);
+		freopen("NUL", "w", stderr);
+		FreeConsole();
+	}
 #else
+	if(use_daemon) {
+		int fd;
+		pid_t pid = fork();
+		if(pid < 0) {
+			perror("fork");
+			return -1;
+		}
+		if(pid != 0)
+			exit(0);
+		pid = setsid();
+		if(pid < -1) {
+			perror("setsid");
+			return -1;
+		}
+		chdir("/");
+		fd = open ("/dev/null", O_RDWR, 0);
+		if(fd != -1) {
+			dup2 (fd, 0);
+			dup2 (fd, 1);
+			dup2 (fd, 2);
+			if(fd > 2)
+				close (fd);
+		}
+		umask(0);
+	}
 	signal(SIGPIPE, SIG_IGN);
 #endif
 
+	printf("Startup\n"
+		"  local bind : %d\n"
+		"  remote addr: %s\n"
+		"  remote port: %d\n"
+		"  remote tcp : %s\n"
+		, local_port
+		, remote_addr
+		, remote_port
+		, remote_tcp? "on": "off");
+
 	srand((unsigned int)time(NULL));
-	transport_cache_init(5);
 	domain_cache_init(hosts_file);
+	transport_cache_init(transport_timeout);
 	return dnsproxy(local_port, remote_addr, remote_port, remote_tcp);
 }
