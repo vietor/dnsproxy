@@ -201,7 +201,7 @@ static void process_response_tcp(PROXY_ENGINE *engine)
 				to_down = 1;
 				break;
 			}
-			if(len + sizeof(unsigned short) < buflen)
+			if(len + sizeof(unsigned short) > buflen)
 				break;
 			process_response(engine, engine->buffer + engine->head + sizeof(unsigned short), len);
 			engine->head += len + sizeof(unsigned short);
