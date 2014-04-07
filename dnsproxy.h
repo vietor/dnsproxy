@@ -20,6 +20,7 @@
 #define socklen_t int
 #else
 #include <sys/types.h>
+#include <sys/stat.h>
 #include <sys/time.h>
 #include <sys/ioctl.h>
 #include <sys/socket.h>
@@ -27,6 +28,7 @@
 #include <netinet/ip.h>
 #include <arpa/inet.h>
 #include <netdb.h>
+#include <fcntl.h>
 #include <errno.h>
 #include <unistd.h>
 #include <signal.h>
