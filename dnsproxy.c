@@ -28,6 +28,8 @@ typedef struct {
 	char buffer[PACKAGE_SIZE * 3];
 } PROXY_ENGINE;
 
+static const int enable = 1;
+
 static void process_query(PROXY_ENGINE *engine)
 {
 	DNS_QES *qes, *rqes;
@@ -131,6 +133,7 @@ static void process_query(PROXY_ENGINE *engine)
 					engine->rear = 0;
 					engine->dns_tcp = socket(AF_INET, SOCK_STREAM, 0);
 					if(engine->dns_tcp != INVALID_SOCKET) {
+						setsockopt(engine->dns_tcp, IPPROTO_TCP, TCP_NODELAY, (void*)&enable, sizeof(enable));
 						if(connect(engine->dns_tcp, (struct sockaddr*)&engine->dns_addr, sizeof(struct sockaddr_in)) != 0) {
 							closesocket(engine->dns_tcp);
 							engine->dns_tcp = INVALID_SOCKET;
@@ -232,9 +235,6 @@ static void process_response_tcp(PROXY_ENGINE *engine)
 
 static int dnsproxy(unsigned short local_port, const char* remote_addr, unsigned short remote_port, int remote_tcp)
 {
-#ifndef _WIN32
-	static const int one = 1;
-#endif
 	int maxfd, fds;
 	fd_set readfds;
 	struct timeval timeout;
@@ -258,7 +258,7 @@ static int dnsproxy(unsigned short local_port, const char* remote_addr, unsigned
 		return -1;
 	}
 #ifndef _WIN32
-	setsockopt(engine->service, SOL_SOCKET, SO_REUSEADDR, &one, sizeof(one));
+	setsockopt(engine->service, SOL_SOCKET, SO_REUSEADDR, (void*)&enable, sizeof(enable));
 #endif
 	memset(&addr, 0, sizeof(addr));
 	addr.sin_family = AF_INET;
