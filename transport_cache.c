@@ -90,9 +90,9 @@ void transport_cache_clean()
 
 	time(&current);
 	while(!rbtree_empty(&g_cache.rb_expire)) {
-		node = rbtree_first(&g_cache.rb_expire);
+		node = rbtree_last(&g_cache.rb_expire);
 		cache = rbtree_entry(node, TRANSPORT_CACHE, rb_expire);
-		if(cache->expire < current)
+		if(cache->expire > current)
 			break;
 		transport_cache_delete(cache);
 	}
