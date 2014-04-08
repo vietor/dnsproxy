@@ -12,6 +12,7 @@ $ make && make install
 ## Simple tutorial
 
 ```bash
+$ dnsproxy -h
 Usage: dnsproxy [options]
   -d or --daemon
                        (daemon mode)

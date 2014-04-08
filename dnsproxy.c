@@ -10,7 +10,7 @@
 
 #include "dnsproxy.h"
 
-#define VERSION "1.0.0"
+#define VERSION "1.0-rc1"
 #define PACKAGE_SIZE 512
 
 #if defined(_MSC_VER)
