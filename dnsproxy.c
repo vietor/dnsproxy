@@ -144,8 +144,9 @@ static void process_query(PROXY_ENGINE *engine)
 				if(engine->dns_tcp == INVALID_SOCKET)
 					rhdr->rcode = 2;
 				else{
+					pos = qbuffer;
 					len = size + sizeof(unsigned short);
-					*(unsigned short*)qbuffer = htons((unsigned short)size);
+					*(unsigned short*)pos = htons((unsigned short)size);
 					if(send(engine->dns_tcp, qbuffer, len, 0) != len) {
 						closesocket(engine->dns_tcp);
 						engine->dns_tcp = INVALID_SOCKET;
@@ -195,6 +196,7 @@ static void process_response_udp(PROXY_ENGINE *engine)
 
 static void process_response_tcp(PROXY_ENGINE *engine)
 {
+	char *pos;
 	int to_down, size;
 	unsigned int len, buflen;
 
@@ -205,14 +207,15 @@ static void process_response_tcp(PROXY_ENGINE *engine)
 	else {
 		engine->rear += size;
 		while((buflen = engine->rear - engine->head) > sizeof(unsigned short)) {
-			len = ntohs(*(unsigned short*)(engine->buffer + engine->head));
+			pos = engine->buffer + engine->head;
+			len = ntohs(*(unsigned short*)pos);
 			if(len > PACKAGE_SIZE) {
 				to_down = 1;
 				break;
 			}
 			if(len + sizeof(unsigned short) > buflen)
 				break;
-			process_response(engine, engine->buffer + engine->head + sizeof(unsigned short), len);
+			process_response(engine, pos + sizeof(unsigned short), len);
 			engine->head += len + sizeof(unsigned short);
 			if(engine->head == engine->rear) {
 				engine->head = 0;
