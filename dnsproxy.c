@@ -9,6 +9,7 @@
  */
 
 #include "dnsproxy.h"
+#include "asciilogo.h"
 
 #define VERSION "1.0-rc1"
 #define PACKAGE_SIZE 512
@@ -381,7 +382,10 @@ int main(int argc, const char* argv[])
 			use_daemon = 1;
 			break;
 		case 'v':
-			printf("version: %s\n", VERSION);
+			printf("%s"
+				" version: %s\n",
+				ascii_logo,
+				VERSION);
 			return 0;
 		case 'h':
 		default:
@@ -428,15 +432,14 @@ int main(int argc, const char* argv[])
 	signal(SIGPIPE, SIG_IGN);
 #endif
 
-	printf("Startup\n"
-		"  local bind : %d\n"
-		"  remote addr: %s\n"
-		"  remote port: %d\n"
-		"  remote tcp : %s\n"
+	printf("%s"
+		" runing at %d\n"
+		" transport to %s:%d,%s\n"
+		, ascii_logo
 		, local_port
 		, remote_addr
 		, remote_port
-		, remote_tcp? "on": "off");
+		, remote_tcp? "tcp": "udp");
 
 	srand((unsigned int)time(NULL));
 	domain_cache_init(hosts_file);
