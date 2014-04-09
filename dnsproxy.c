@@ -320,14 +320,14 @@ static int dnsproxy(unsigned short local_port, const char* remote_addr, unsigned
 }
 
 struct xoption options[] = {
-	{'v', "version", xargument_no, NULL, 'v'},
-	{'h', "help", xargument_no, NULL, 'h'},
-	{'d', "daemon", xargument_no, NULL, 'd'},
-	{'p', "port", xargument_required, NULL, 'p'},
-	{'T', "remote-tcp", xargument_no, NULL, 'T'},
-	{'P', "remote-port", xargument_required, NULL, 'P'},
-	{'R', "remote-addr", xargument_required, NULL, 'R'},
-	{'f', "hosts-file", xargument_required, NULL, 'f'},
+	{'v', "version", xargument_no, NULL, -1},
+	{'h', "help", xargument_no, NULL, -1},
+	{'d', "daemon", xargument_no, NULL, -1},
+	{'p', "port", xargument_required, NULL, -1},
+	{'T', "remote-tcp", xargument_no, NULL, -1},
+	{'P', "remote-port", xargument_required, NULL, -1},
+	{'R', "remote-addr", xargument_required, NULL, -1},
+	{'f', "hosts-file", xargument_required, NULL, -1},
 	{0, NULL, xargument_no, NULL, 0},
 };
 
