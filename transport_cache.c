@@ -22,7 +22,7 @@ static int new_search(const void* k, const struct rbnode* r)
 {
 	TRANSPORT_CACHE *right;
 	right = rbtree_entry(r, TRANSPORT_CACHE, rb_new);
-	return (int)(unsigned short)k - right->new_id;
+	return (int)*(unsigned short*)k - right->new_id;
 }
 
 static int new_compare(const struct rbnode* l, const struct rbnode* r)
@@ -53,7 +53,7 @@ void transport_cache_init(unsigned short timeout)
 TRANSPORT_CACHE* transport_cache_search(unsigned short new_id)
 {
 	struct rbnode *node;
-	node = rbtree_search(&g_cache.rb_new, (void*)new_id);
+	node = rbtree_search(&g_cache.rb_new, &new_id);
 	if(node == RBNODE_NULL)
 		return NULL;
 	return rbtree_entry(node, TRANSPORT_CACHE, rb_new);

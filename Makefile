@@ -6,7 +6,7 @@ CC = gcc
 RM = rm -f
 CP = cp -f
 
-CFLAGS = -O2 -Wall -Wno-int-to-pointer-cast -Wno-pointer-to-int-cast
+CFLAGS = -O2 -Wall
 LDFLAGS = -s
 PREFIX = /usr
 
