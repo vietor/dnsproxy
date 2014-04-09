@@ -23,23 +23,27 @@
 #endif
 
 typedef struct {
-	SOCKET server;
-	int use_tcp;
-	SOCKET dns_udp;
-	SOCKET dns_tcp;
-	struct sockaddr_in target;
+	int tcp;
+	SOCKET sock;
+	struct sockaddr_in addr;
 	unsigned int head, rear;
 	char buffer[PACKAGE_SIZE * 3];
+} REMOTE_DNS;
+
+typedef struct {
+	SOCKET server;
+	REMOTE_DNS primary;
 } PROXY_ENGINE;
 
 static const int enable = 1;
 
 static void process_query(PROXY_ENGINE *engine)
 {
+	REMOTE_DNS *dns;
 	DNS_QES *qes, *rqes;
 	DNS_HDR *hdr, *rhdr;
-	TRANSPORT_CACHE *tcache;
 	DOMAIN_CACHE *dcache;
+	TRANSPORT_CACHE *tcache;
 	socklen_t addrlen;
 	struct sockaddr_in source;
 	char *pos, *head, *rear;
@@ -125,33 +129,34 @@ static void process_query(PROXY_ENGINE *engine)
 		if(tcache == NULL)
 			rhdr->rcode = 2;
 		else {
+			dns = &engine->primary;
 			hdr->id = htons(tcache->new_id);
-			if(!engine->use_tcp) {
-				if(sendto(engine->dns_udp, buffer, size, 0, (struct sockaddr*)&engine->target, sizeof(struct sockaddr_in)) != size)
+			if(!dns->tcp) {
+				if(sendto(dns->sock, buffer, size, 0, (struct sockaddr*)&dns->addr, sizeof(struct sockaddr_in)) != size)
 					rhdr->rcode = 2;
 			}
 			else {
-				if(engine->dns_tcp == INVALID_SOCKET) {
-					engine->head = 0;
-					engine->rear = 0;
-					engine->dns_tcp = socket(AF_INET, SOCK_STREAM, 0);
-					if(engine->dns_tcp != INVALID_SOCKET) {
-						setsockopt(engine->dns_tcp, IPPROTO_TCP, TCP_NODELAY, (void*)&enable, sizeof(enable));
-						if(connect(engine->dns_tcp, (struct sockaddr*)&engine->target, sizeof(struct sockaddr_in)) != 0) {
-							closesocket(engine->dns_tcp);
-							engine->dns_tcp = INVALID_SOCKET;
+				if(dns->sock == INVALID_SOCKET) {
+					dns->head = 0;
+					dns->rear = 0;
+					dns->sock = socket(AF_INET, SOCK_STREAM, 0);
+					if(dns->sock != INVALID_SOCKET) {
+						setsockopt(dns->sock, IPPROTO_TCP, TCP_NODELAY, (void*)&enable, sizeof(enable));
+						if(connect(dns->sock, (struct sockaddr*)&dns->addr, sizeof(struct sockaddr_in)) != 0) {
+							closesocket(dns->sock);
+							dns->sock = INVALID_SOCKET;
 						}
 					}
 				}
-				if(engine->dns_tcp == INVALID_SOCKET)
+				if(dns->sock == INVALID_SOCKET)
 					rhdr->rcode = 2;
 				else{
 					pos = qbuffer;
 					len = size + sizeof(unsigned short);
 					*(unsigned short*)pos = htons((unsigned short)size);
-					if(send(engine->dns_tcp, qbuffer, len, 0) != len) {
-						closesocket(engine->dns_tcp);
-						engine->dns_tcp = INVALID_SOCKET;
+					if(send(dns->sock, qbuffer, len, 0) != len) {
+						closesocket(dns->sock);
+						dns->sock = INVALID_SOCKET;
 						rhdr->rcode = 2;
 					}
 				}
@@ -188,14 +193,14 @@ static void process_response_udp(PROXY_ENGINE *engine)
 	int size;
 	socklen_t addrlen;
 	struct sockaddr_in source;
-	char buffer[PACKAGE_SIZE];
+	REMOTE_DNS *dns = &engine->primary;
 
 	addrlen = sizeof(struct sockaddr_in);
-	size = recvfrom(engine->dns_udp, buffer, PACKAGE_SIZE, 0, (struct sockaddr*)&source, &addrlen);
+	size = recvfrom(dns->sock, dns->buffer, PACKAGE_SIZE, 0, (struct sockaddr*)&source, &addrlen);
 	if(size < sizeof(DNS_HDR))
 		return;
 
-	process_response(engine, buffer, size);
+	process_response(engine, dns->buffer, size);
 }
 
 static void process_response_tcp(PROXY_ENGINE *engine)
@@ -203,15 +208,16 @@ static void process_response_tcp(PROXY_ENGINE *engine)
 	char *pos;
 	int to_down, size;
 	unsigned int len, buflen;
+	REMOTE_DNS *dns = &engine->primary;
 
 	to_down = 0;
-	size = recv(engine->dns_tcp, engine->buffer + engine->rear, PACKAGE_SIZE + sizeof(unsigned short), 0);
+	size = recv(dns->sock, dns->buffer + dns->rear, PACKAGE_SIZE + sizeof(unsigned short), 0);
 	if(size < 1)
 		to_down = 1;
 	else {
-		engine->rear += size;
-		while((buflen = engine->rear - engine->head) > sizeof(unsigned short)) {
-			pos = engine->buffer + engine->head;
+		dns->rear += size;
+		while((buflen = dns->rear - dns->head) > sizeof(unsigned short)) {
+			pos = dns->buffer + dns->head;
 			len = ntohs(*(unsigned short*)pos);
 			if(len > PACKAGE_SIZE) {
 				to_down = 1;
@@ -220,24 +226,23 @@ static void process_response_tcp(PROXY_ENGINE *engine)
 			if(len + sizeof(unsigned short) > buflen)
 				break;
 			process_response(engine, pos + sizeof(unsigned short), len);
-			engine->head += len + sizeof(unsigned short);
-			if(engine->head == engine->rear) {
-				engine->head = 0;
-				engine->rear = 0;
+			dns->head += len + sizeof(unsigned short);
+			if(dns->head == dns->rear) {
+				dns->head = 0;
+				dns->rear = 0;
 			}
-			else if(engine->head > PACKAGE_SIZE) {
-				len = engine->rear - engine->head;
-				memmove(engine->buffer, engine->buffer + engine->head, len);
-				engine->head = 0;
-				engine->rear = len;
+			else if(dns->head > PACKAGE_SIZE) {
+				len = dns->rear - dns->head;
+				memmove(dns->buffer, dns->buffer + dns->head, len);
+				dns->head = 0;
+				dns->rear = len;
 			}
 		}
 	}
 
 	if(to_down){
-		closesocket(engine->dns_tcp);
-		engine->dns_tcp = INVALID_SOCKET;
-		return;
+		closesocket(dns->sock);
+		dns->sock = INVALID_SOCKET;
 	}
 }
 
@@ -247,18 +252,17 @@ static int dnsproxy(unsigned short local_port, const char* remote_addr, unsigned
 	fd_set readfds;
 	struct timeval timeout;
 	struct sockaddr_in addr;
-	PROXY_ENGINE *engine, _engine;
+	PROXY_ENGINE _engine, *engine = &_engine;
+	REMOTE_DNS *dns = &_engine.primary;
 
 	engine = &_engine;
 	memset(&_engine, 0, sizeof(PROXY_ENGINE));
 
-	engine->use_tcp = remote_tcp;
-	engine->dns_udp = INVALID_SOCKET;
-	engine->dns_tcp = INVALID_SOCKET;
-
-	engine->target.sin_family = AF_INET;
-	engine->target.sin_addr.s_addr = inet_addr(remote_addr);
-	engine->target.sin_port = htons(remote_port);
+	dns->tcp = remote_tcp;
+	dns->sock = INVALID_SOCKET;
+	dns->addr.sin_family = AF_INET;
+	dns->addr.sin_addr.s_addr = inet_addr(remote_addr);
+	dns->addr.sin_port = htons(remote_port);
 
 	engine->server = socket(AF_INET, SOCK_DGRAM, 0);
 	if(engine->server == INVALID_SOCKET) {
@@ -275,9 +279,9 @@ static int dnsproxy(unsigned short local_port, const char* remote_addr, unsigned
 		return -1;
 	}
 
-	if(!engine->use_tcp) {
-		engine->dns_udp = socket(AF_INET, SOCK_DGRAM, 0);
-		if(engine->dns_udp == INVALID_SOCKET) {
+	if(!dns->tcp) {
+		dns->sock = socket(AF_INET, SOCK_DGRAM, 0);
+		if(dns->sock == INVALID_SOCKET) {
 			perror("create socket");
 			return -1;
 		}
@@ -287,15 +291,10 @@ static int dnsproxy(unsigned short local_port, const char* remote_addr, unsigned
 		FD_ZERO(&readfds);
 		FD_SET(engine->server, &readfds);
 		maxfd = (int)engine->server;
-		if(!engine->use_tcp) {
-			FD_SET(engine->dns_udp, &readfds);
-			if(maxfd < (int)engine->dns_udp)
-				maxfd = (int)engine->dns_udp;
-		}
-		else if(engine->dns_tcp != INVALID_SOCKET) {
-			FD_SET(engine->dns_tcp, &readfds);
-			if(maxfd < (int)engine->dns_tcp)
-				maxfd = (int)engine->dns_tcp;
+		if(dns->sock != INVALID_SOCKET) {
+			FD_SET(dns->sock, &readfds);
+			if(maxfd < (int)dns->sock)
+				maxfd = (int)dns->sock;
 		}
 		timeout.tv_sec = 5;
 		timeout.tv_usec = 0;
@@ -303,14 +302,12 @@ static int dnsproxy(unsigned short local_port, const char* remote_addr, unsigned
 		if(fds == 0)
 			transport_cache_clean();
 		else if(fds > 0) {
-			if(!engine->use_tcp) {
-				if(FD_ISSET(engine->dns_udp, &readfds))
-					process_response_udp(engine);
-			}
-			else {
-				if(engine->dns_tcp != INVALID_SOCKET
-					&& FD_ISSET(engine->dns_tcp, &readfds))
+			if(dns->sock != INVALID_SOCKET
+				&& FD_ISSET(dns->sock, &readfds)) {
+				if(dns->tcp)
 					process_response_tcp(engine);
+				else
+					process_response_udp(engine);
 			}
 			if(FD_ISSET(engine->server, &readfds))
 				process_query(engine);
