@@ -11,7 +11,10 @@
 #include "dnsproxy.h"
 #include "asciilogo.h"
 
-#define VERSION "1.0-rc1"
+#ifndef VERSION
+#define VERSION "development"
+#endif
+
 #define PACKAGE_SIZE 512
 
 #if defined(_MSC_VER)
@@ -385,7 +388,7 @@ int main(int argc, const char* argv[])
 			break;
 		case 'v':
 			printf("%s"
-				" version: %s\n",
+				" * version: %s\n",
 				ascii_logo,
 				VERSION);
 			return 0;
@@ -435,8 +438,8 @@ int main(int argc, const char* argv[])
 #endif
 
 	printf("%s"
-		" runing at %d\n"
-		" transport to %s:%d,%s\n"
+		" * runing at %d\n"
+		" * transport to %s:%d,%s\n"
 		, ascii_logo
 		, local_port
 		, remote_addr

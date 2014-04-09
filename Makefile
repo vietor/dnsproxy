@@ -1,12 +1,13 @@
 # Makefile for dnsproxy
 
 uname_S := $(shell sh -c 'uname -s 2>/dev/null || echo not')
+version := $(shell sh -c 'cat VERSION')
 
 CC = gcc
 RM = rm -f
 CP = cp -f
 
-CFLAGS = -O2 -Wall
+CFLAGS = -O2 -Wall -DVERSION=\"${version}\" -DNDEBUG
 LDFLAGS = -s
 PREFIX = /usr
 
@@ -29,7 +30,7 @@ all: $(TARGET)
 $(OBJS): $(SOURCES) $(INCLUDES)
 
 $(TARGET): $(OBJS)
-	$(CC) -o $(TARGET) $(CFLAGS) $(OBJS) $(LDFLAGS)
+	$(CC) -o $(TARGET) $(OBJS) $(LDFLAGS)
 
 clean:
 	$(RM) *.o embed/*.o *~ $(TARGET)
