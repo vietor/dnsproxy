@@ -22,7 +22,10 @@
 #pragma comment(lib,"mswsock")
 #endif
 
-typedef struct {
+struct proxy_engine;
+
+typedef struct remote_dns {
+	struct proxy_engine *engine;
 	int tcp;
 	SOCKET sock;
 	struct sockaddr_in addr;
@@ -30,7 +33,7 @@ typedef struct {
 	char buffer[PACKAGE_SIZE * 3];
 } REMOTE_DNS;
 
-typedef struct {
+typedef struct proxy_engine {
 	SOCKET server;
 	REMOTE_DNS primary;
 } PROXY_ENGINE;
@@ -171,7 +174,7 @@ static void process_query(PROXY_ENGINE *engine)
 	}
 }
 
-static void process_response(PROXY_ENGINE *engine, char* buffer, int size)
+static void process_response(SOCKET sock, char* buffer, int size)
 {
 	DNS_HDR *hdr;
 	TRANSPORT_CACHE *cache;
@@ -183,32 +186,33 @@ static void process_response(PROXY_ENGINE *engine, char* buffer, int size)
 	cache = transport_cache_search(ntohs(hdr->id));
 	if(cache) {
 		hdr->id = htons(cache->old_id);
-		sendto(engine->server, buffer, size, 0, (struct sockaddr*)&cache->address, sizeof(struct sockaddr_in));
+		sendto(sock, buffer, size, 0, (struct sockaddr*)&cache->address, sizeof(struct sockaddr_in));
 		transport_cache_delete(cache);
 	}
 }
 
-static void process_response_udp(PROXY_ENGINE *engine)
+static void process_response_udp(REMOTE_DNS *dns)
 {
 	int size;
 	socklen_t addrlen;
 	struct sockaddr_in source;
-	REMOTE_DNS *dns = &engine->primary;
 
 	addrlen = sizeof(struct sockaddr_in);
 	size = recvfrom(dns->sock, dns->buffer, PACKAGE_SIZE, 0, (struct sockaddr*)&source, &addrlen);
 	if(size < sizeof(DNS_HDR))
 		return;
 
-	process_response(engine, dns->buffer, size);
+	if(source.sin_addr.s_addr != dns->addr.sin_addr.s_addr)
+		return;
+
+	process_response(dns->engine->server, dns->buffer, size);
 }
 
-static void process_response_tcp(PROXY_ENGINE *engine)
+static void process_response_tcp(REMOTE_DNS *dns)
 {
 	char *pos;
 	int to_down, size;
 	unsigned int len, buflen;
-	REMOTE_DNS *dns = &engine->primary;
 
 	to_down = 0;
 	size = recv(dns->sock, dns->buffer + dns->rear, PACKAGE_SIZE + sizeof(unsigned short), 0);
@@ -225,7 +229,7 @@ static void process_response_tcp(PROXY_ENGINE *engine)
 			}
 			if(len + sizeof(unsigned short) > buflen)
 				break;
-			process_response(engine, pos + sizeof(unsigned short), len);
+			process_response(dns->engine->server, pos + sizeof(unsigned short), len);
 			dns->head += len + sizeof(unsigned short);
 			if(dns->head == dns->rear) {
 				dns->head = 0;
@@ -258,6 +262,7 @@ static int dnsproxy(unsigned short local_port, const char* remote_addr, unsigned
 	engine = &_engine;
 	memset(&_engine, 0, sizeof(PROXY_ENGINE));
 
+	dns->engine = engine;
 	dns->tcp = remote_tcp;
 	dns->sock = INVALID_SOCKET;
 	dns->addr.sin_family = AF_INET;
@@ -305,9 +310,9 @@ static int dnsproxy(unsigned short local_port, const char* remote_addr, unsigned
 			if(dns->sock != INVALID_SOCKET
 				&& FD_ISSET(dns->sock, &readfds)) {
 				if(dns->tcp)
-					process_response_tcp(engine);
+					process_response_tcp(dns);
 				else
-					process_response_udp(engine);
+					process_response_udp(dns);
 			}
 			if(FD_ISSET(engine->server, &readfds))
 				process_query(engine);
