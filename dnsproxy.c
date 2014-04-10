@@ -15,7 +15,7 @@
 #define VERSION "development"
 #endif
 
-#define PACKAGE_SIZE 512
+#define PACKAGE_SIZE 4096
 
 #if defined(_MSC_VER)
 #pragma comment(lib,"ws2_32")
