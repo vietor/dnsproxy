@@ -29,7 +29,9 @@ typedef struct remote_dns {
 	int tcp;
 	SOCKET sock;
 	struct sockaddr_in addr;
-	unsigned int head, rear;
+	unsigned int head;
+	unsigned int rear;
+	unsigned int capacity;
 	char buffer[PACKAGE_SIZE * 3];
 } REMOTE_DNS;
 
@@ -158,6 +160,8 @@ static void process_query(PROXY_ENGINE *engine)
 					len = size + sizeof(unsigned short);
 					*(unsigned short*)pos = htons((unsigned short)size);
 					if(send(dns->sock, qbuffer, len, 0) != len) {
+						dns->head = 0;
+						dns->rear = 0;
 						closesocket(dns->sock);
 						dns->sock = INVALID_SOCKET;
 						rhdr->rcode = 2;
@@ -215,7 +219,7 @@ static void process_response_tcp(REMOTE_DNS *dns)
 	unsigned int len, buflen;
 
 	to_down = 0;
-	size = recv(dns->sock, dns->buffer + dns->rear, PACKAGE_SIZE + sizeof(unsigned short), 0);
+	size = recv(dns->sock, dns->buffer + dns->rear, dns->capacity - dns->rear, 0);
 	if(size < 1)
 		to_down = 1;
 	else {
@@ -231,6 +235,8 @@ static void process_response_tcp(REMOTE_DNS *dns)
 				break;
 			process_response(dns->engine->server, pos + sizeof(unsigned short), len);
 			dns->head += len + sizeof(unsigned short);
+		}
+		if(!to_down) {
 			if(dns->head == dns->rear) {
 				dns->head = 0;
 				dns->rear = 0;
@@ -245,6 +251,8 @@ static void process_response_tcp(REMOTE_DNS *dns)
 	}
 
 	if(to_down){
+		dns->head = 0;
+		dns->rear = 0;
 		closesocket(dns->sock);
 		dns->sock = INVALID_SOCKET;
 	}
@@ -268,6 +276,9 @@ static int dnsproxy(unsigned short local_port, const char* remote_addr, unsigned
 	dns->addr.sin_family = AF_INET;
 	dns->addr.sin_addr.s_addr = inet_addr(remote_addr);
 	dns->addr.sin_port = htons(remote_port);
+	dns->head = 0;
+	dns->rear = 0;
+	dns->capacity = sizeof(dns->buffer);
 
 	engine->server = socket(AF_INET, SOCK_DGRAM, 0);
 	if(engine->server == INVALID_SOCKET) {
