@@ -15,6 +15,7 @@
 #define VERSION "development"
 #endif
 
+#define CLEAN_TIME 5
 #define PACKAGE_SIZE 4096
 
 #if defined(_MSC_VER)
@@ -264,6 +265,7 @@ static int dnsproxy(unsigned short local_port, const char* remote_addr, unsigned
 	fd_set readfds;
 	struct timeval timeout;
 	struct sockaddr_in addr;
+	time_t current, last_clean;
 	PROXY_ENGINE _engine, *engine = &_engine;
 	REMOTE_DNS *dns = &_engine.primary;
 
@@ -303,6 +305,7 @@ static int dnsproxy(unsigned short local_port, const char* remote_addr, unsigned
 		}
 	}
 
+	last_clean = time(&current);
 	while(1) {
 		FD_ZERO(&readfds);
 		FD_SET(engine->server, &readfds);
@@ -312,12 +315,10 @@ static int dnsproxy(unsigned short local_port, const char* remote_addr, unsigned
 			if(maxfd < (int)dns->sock)
 				maxfd = (int)dns->sock;
 		}
-		timeout.tv_sec = 5;
+		timeout.tv_sec = CLEAN_TIME;
 		timeout.tv_usec = 0;
 		fds = select(maxfd + 1, &readfds, NULL, NULL, &timeout);
-		if(fds == 0)
-			transport_cache_clean();
-		else if(fds > 0) {
+		if(fds > 0) {
 			if(dns->sock != INVALID_SOCKET
 				&& FD_ISSET(dns->sock, &readfds)) {
 				if(dns->tcp)
@@ -327,6 +328,10 @@ static int dnsproxy(unsigned short local_port, const char* remote_addr, unsigned
 			}
 			if(FD_ISSET(engine->server, &readfds))
 				process_query(engine);
+		}
+		if(fds == 0 || time(&current) - last_clean > CLEAN_TIME) {
+			transport_cache_clean();
+			last_clean = fds == 0? time(NULL): current;
 		}
 	}
 	return 0;
