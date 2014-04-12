@@ -60,16 +60,24 @@ typedef struct {
 	unsigned char ad :1;     // authenticated data
 	unsigned char z :1;      // its z! reserved
 	unsigned char ra :1;     // recursion available
-	unsigned short q_count;  // number of question entries
-	unsigned short ans_count; // number of answer entries
-	unsigned short auth_count; // number of authority entries
-	unsigned short add_count; // number of resource entries
+	unsigned short qd_count; // number of question entries
+	unsigned short an_count; // number of answer entries
+	unsigned short ns_count; // number of authority entries
+	unsigned short nr_count; // number of resource entries
 } DNS_HDR;
 
 typedef struct {
 	unsigned short type;
 	unsigned short classes;
-} DNS_QES;
+} DNS_QDS;
+
+typedef struct {
+	unsigned short type;
+	unsigned short classes;
+	unsigned int ttl;
+	unsigned short rd_length;
+	char rd_data[0];
+} DNS_RRS;
 
 typedef struct {
 	struct rbnode rb_name;
@@ -86,7 +94,7 @@ typedef struct {
 	time_t expire;
 	unsigned short new_id;
 	unsigned short old_id;
-	struct sockaddr_in address;
+	struct sockaddr_in source;
 } TRANSPORT_CACHE;
 
 void transport_cache_init(unsigned short timeout);

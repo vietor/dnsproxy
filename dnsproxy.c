@@ -45,7 +45,7 @@ static const int enable = 1;
 static void process_query(PROXY_ENGINE *engine)
 {
 	REMOTE_DNS *dns;
-	DNS_QES *qes, *rqes;
+	DNS_QDS *qes, *rqes;
 	DNS_HDR *hdr, *rhdr;
 	DOMAIN_CACHE *dcache;
 	TRANSPORT_CACHE *tcache;
@@ -55,7 +55,7 @@ static void process_query(PROXY_ENGINE *engine)
 	char domain[PACKAGE_SIZE];
 	char rbuffer[PACKAGE_SIZE];
 	char qbuffer[PACKAGE_SIZE + sizeof(unsigned short)], *buffer = qbuffer + sizeof(unsigned short);
-	int size, len, dlen, q_count, q_len;
+	int size, len, dlen, qd_count, q_len;
 
 	addrlen = sizeof(struct sockaddr_in);
 	size = recvfrom(engine->server, buffer, PACKAGE_SIZE, 0, (struct sockaddr*)&source, &addrlen);
@@ -69,11 +69,11 @@ static void process_query(PROXY_ENGINE *engine)
 	rhdr->id = hdr->id;
 	rhdr->qr = 1;
 	q_len = 0;
-	q_count = ntohs(hdr->q_count);
+	qd_count = ntohs(hdr->qd_count);
 	qes = NULL;
 	head = buffer + sizeof(DNS_HDR);
 	rear = buffer + size;
-	if(hdr->qr != 0 || hdr->tc != 0 || q_count < 1)
+	if(hdr->qr != 0 || hdr->tc != 0 || qd_count < 1)
 		rhdr->rcode = 1;
 	else {
 		dlen = 0;
@@ -81,7 +81,7 @@ static void process_query(PROXY_ENGINE *engine)
 		pos = head;
 		while(pos < rear) {
 			len = (int)*pos++;
-			if(len < 0 || len > 63 || (pos + len) > (rear - sizeof(DNS_QES))) {
+			if(len < 0 || len > 63 || (pos + len) > (rear - sizeof(DNS_QDS))) {
 				rhdr->rcode = 1;
 				break;
 			}
@@ -92,11 +92,11 @@ static void process_query(PROXY_ENGINE *engine)
 					domain[dlen++] = (char)tolower(*pos++);
 			}
 			else {
-				qes = (DNS_QES*) pos;
+				qes = (DNS_QDS*) pos;
 				if(ntohs(qes->classes) != 0x01)
 					rhdr->rcode = 4;
 				else {
-					pos += sizeof(DNS_QES);
+					pos += sizeof(DNS_QDS);
 					q_len = pos - head;
 				}
 				break;
@@ -104,20 +104,20 @@ static void process_query(PROXY_ENGINE *engine)
 		}
 	}
 
-	if(rhdr->rcode == 0 && q_count == 1 && ntohs(qes->type) == 0x01) {
+	if(rhdr->rcode == 0 && qd_count == 1 && ntohs(qes->type) == 0x01) {
 		dcache = domain_cache_search(domain);
 		if(dcache) {
-			rhdr->q_count = htons(1);
-			rhdr->ans_count = htons(1);
+			rhdr->qd_count = htons(1);
+			rhdr->an_count = htons(1);
 			pos = rbuffer + sizeof(DNS_HDR);
 			memcpy(pos, head, q_len);
 			pos += q_len;
 			*pos++ = 0xc0;
 			*pos++ = 0x0c;
-			rqes = (DNS_QES*)pos;
+			rqes = (DNS_QDS*)pos;
 			rqes->type = qes->type;
 			rqes->classes = qes->classes;
-			pos += sizeof(DNS_QES);
+			pos += sizeof(DNS_QDS);
 			*(unsigned int*)pos = htonl(600);
 			pos += sizeof(unsigned int);
 			*(unsigned short*)pos = htons(4);
@@ -184,13 +184,13 @@ static void process_response(SOCKET sock, char* buffer, int size)
 	TRANSPORT_CACHE *cache;
 
 	hdr = (DNS_HDR*)buffer;
-	if(hdr->qr != 1 || hdr->tc != 0 || ntohs(hdr->q_count) <1 || ntohs(hdr->ans_count) < 1)
+	if(hdr->qr != 1 || hdr->tc != 0 || ntohs(hdr->qd_count) <1 || ntohs(hdr->an_count) < 1)
 		return;
 
 	cache = transport_cache_search(ntohs(hdr->id));
 	if(cache) {
 		hdr->id = htons(cache->old_id);
-		sendto(sock, buffer, size, 0, (struct sockaddr*)&cache->address, sizeof(struct sockaddr_in));
+		sendto(sock, buffer, size, 0, (struct sockaddr*)&cache->source, sizeof(struct sockaddr_in));
 		transport_cache_delete(cache);
 	}
 }

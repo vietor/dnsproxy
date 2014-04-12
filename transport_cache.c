@@ -67,7 +67,7 @@ TRANSPORT_CACHE* transport_cache_insert(unsigned short old_id, struct sockaddr_i
 	cache->new_id = ++g_cache.index;
 	cache->expire = time(NULL) + g_cache.timeout;
 	cache->old_id = old_id;
-	memcpy(&cache->address, address, sizeof(struct sockaddr_in));
+	memcpy(&cache->source, address, sizeof(struct sockaddr_in));
 	++g_cache.count;
 	rbtree_insert(&g_cache.rb_new, &cache->rb_new);
 	rbtree_insert(&g_cache.rb_expire, &cache->rb_expire);
