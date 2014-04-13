@@ -91,6 +91,7 @@ DOMAIN_CACHE* domain_cache_search(char* domain);
 typedef struct {
 	struct rbnode rb_new;
 	struct rbnode rb_expire;
+	void *context;
 	time_t expire;
 	unsigned short new_id;
 	unsigned short old_id;
@@ -99,6 +100,6 @@ typedef struct {
 
 void transport_cache_init(unsigned short timeout);
 TRANSPORT_CACHE* transport_cache_search(unsigned short new_id);
-TRANSPORT_CACHE* transport_cache_insert(unsigned short old_id, struct sockaddr_in *address);
+TRANSPORT_CACHE* transport_cache_insert(unsigned short old_id, struct sockaddr_in *address, void *context);
 void transport_cache_delete(TRANSPORT_CACHE *cache);
 void transport_cache_clean();

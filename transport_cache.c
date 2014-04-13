@@ -59,11 +59,12 @@ TRANSPORT_CACHE* transport_cache_search(unsigned short new_id)
 	return rbtree_entry(node, TRANSPORT_CACHE, rb_new);
 }
 
-TRANSPORT_CACHE* transport_cache_insert(unsigned short old_id, struct sockaddr_in *address)
+TRANSPORT_CACHE* transport_cache_insert(unsigned short old_id, struct sockaddr_in *address, void *context)
 {
 	TRANSPORT_CACHE *cache = (TRANSPORT_CACHE*)calloc(1, sizeof(TRANSPORT_CACHE));
 	if(cache == NULL)
 		return NULL;
+	cache->context = context;
 	cache->new_id = ++g_cache.index;
 	cache->expire = time(NULL) + g_cache.timeout;
 	cache->old_id = old_id;

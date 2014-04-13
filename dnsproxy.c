@@ -15,18 +15,20 @@
 #define VERSION "development"
 #endif
 
-#define CLEAN_TIME 5
-#define PACKAGE_SIZE 4096
+#define CLEAN_TIME 8
+#define PACKAGE_SIZE 8192
 
 #if defined(_MSC_VER)
 #pragma comment(lib,"ws2_32")
 #pragma comment(lib,"mswsock")
 #endif
 
-struct proxy_engine;
+typedef struct {
+	SOCKET sock;
+	char buffer[PACKAGE_SIZE + sizeof(unsigned short)];
+} LOCAL_DNS;
 
-typedef struct remote_dns {
-	struct proxy_engine *engine;
+typedef struct {
 	int tcp;
 	SOCKET sock;
 	struct sockaddr_in addr;
@@ -36,16 +38,17 @@ typedef struct remote_dns {
 	char buffer[PACKAGE_SIZE * 3];
 } REMOTE_DNS;
 
-typedef struct proxy_engine {
-	SOCKET server;
-	REMOTE_DNS primary;
+typedef struct {
+	LOCAL_DNS local;
+	REMOTE_DNS remote;
 } PROXY_ENGINE;
 
 static const int enable = 1;
 
 static void process_query(PROXY_ENGINE *engine)
 {
-	REMOTE_DNS *dns;
+	LOCAL_DNS *ldns;
+	REMOTE_DNS *rdns;
 	DNS_QDS *qes, *rqes;
 	DNS_HDR *hdr, *rhdr;
 	DOMAIN_CACHE *dcache;
@@ -53,19 +56,21 @@ static void process_query(PROXY_ENGINE *engine)
 	socklen_t addrlen;
 	struct sockaddr_in source;
 	char *pos, *head, *rear;
-	char domain[PACKAGE_SIZE];
-	char rbuffer[PACKAGE_SIZE];
-	char qbuffer[PACKAGE_SIZE + sizeof(unsigned short)], *buffer = qbuffer + sizeof(unsigned short);
+	char *buffer, domain[PACKAGE_SIZE], rbuffer[PACKAGE_SIZE];
 	int size, len, dlen, qd_count, q_len;
 
+	ldns = &engine->local;
+	rdns = &engine->remote;
+	buffer = ldns->buffer + sizeof(unsigned short);
+
 	addrlen = sizeof(struct sockaddr_in);
-	size = recvfrom(engine->server, buffer, PACKAGE_SIZE, 0, (struct sockaddr*)&source, &addrlen);
-	if(size <= sizeof(DNS_HDR))
+	size = recvfrom(ldns->sock, buffer, PACKAGE_SIZE, 0, (struct sockaddr*)&source, &addrlen);
+	if(size <= (int)sizeof(DNS_HDR))
 		return;
 
 	hdr = (DNS_HDR*)buffer;
 	rhdr = (DNS_HDR*)rbuffer;
-	memset(rbuffer, 0, PACKAGE_SIZE);
+	memset(rbuffer, 0, sizeof(DNS_HDR));
 
 	rhdr->id = hdr->id;
 	rhdr->qr = 1;
@@ -78,7 +83,6 @@ static void process_query(PROXY_ENGINE *engine)
 		rhdr->rcode = 1;
 	else {
 		dlen = 0;
-		memset(domain, 0, PACKAGE_SIZE);
 		pos = head;
 		while(pos < rear) {
 			len = (int)*pos++;
@@ -103,6 +107,7 @@ static void process_query(PROXY_ENGINE *engine)
 				break;
 			}
 		}
+		domain[dlen] = '\0';
 	}
 
 	if(rhdr->rcode == 0 && qd_count == 1 && ntohs(qes->type) == 0x01) {
@@ -125,46 +130,45 @@ static void process_query(PROXY_ENGINE *engine)
 			pos += sizeof(unsigned short);
 			*(unsigned int*)pos = dcache->addr.s_addr;
 			pos += sizeof(unsigned int);
-			sendto(engine->server, rbuffer, pos - rbuffer, 0, (struct sockaddr*)&source, sizeof(struct sockaddr_in));
+			sendto(ldns->sock, rbuffer, pos - rbuffer, 0, (struct sockaddr*)&source, sizeof(struct sockaddr_in));
 			return;
 		}
 	}
 
 	if(rhdr->rcode == 0) {
-		tcache = transport_cache_insert(ntohs(hdr->id), &source);
+		tcache = transport_cache_insert(ntohs(hdr->id), &source, ldns);
 		if(tcache == NULL)
 			rhdr->rcode = 2;
 		else {
-			dns = &engine->primary;
 			hdr->id = htons(tcache->new_id);
-			if(!dns->tcp) {
-				if(sendto(dns->sock, buffer, size, 0, (struct sockaddr*)&dns->addr, sizeof(struct sockaddr_in)) != size)
+			if(!rdns->tcp) {
+				if(sendto(rdns->sock, buffer, size, 0, (struct sockaddr*)&rdns->addr, sizeof(struct sockaddr_in)) != size)
 					rhdr->rcode = 2;
 			}
 			else {
-				if(dns->sock == INVALID_SOCKET) {
-					dns->head = 0;
-					dns->rear = 0;
-					dns->sock = socket(AF_INET, SOCK_STREAM, 0);
-					if(dns->sock != INVALID_SOCKET) {
-						setsockopt(dns->sock, IPPROTO_TCP, TCP_NODELAY, (void*)&enable, sizeof(enable));
-						if(connect(dns->sock, (struct sockaddr*)&dns->addr, sizeof(struct sockaddr_in)) != 0) {
-							closesocket(dns->sock);
-							dns->sock = INVALID_SOCKET;
+				if(rdns->sock == INVALID_SOCKET) {
+					rdns->head = 0;
+					rdns->rear = 0;
+					rdns->sock = socket(AF_INET, SOCK_STREAM, 0);
+					if(rdns->sock != INVALID_SOCKET) {
+						setsockopt(rdns->sock, IPPROTO_TCP, TCP_NODELAY, (void*)&enable, sizeof(enable));
+						if(connect(rdns->sock, (struct sockaddr*)&rdns->addr, sizeof(struct sockaddr_in)) != 0) {
+							closesocket(rdns->sock);
+							rdns->sock = INVALID_SOCKET;
 						}
 					}
 				}
-				if(dns->sock == INVALID_SOCKET)
+				if(rdns->sock == INVALID_SOCKET)
 					rhdr->rcode = 2;
 				else{
-					pos = qbuffer;
+					pos = ldns->buffer;
 					len = size + sizeof(unsigned short);
 					*(unsigned short*)pos = htons((unsigned short)size);
-					if(send(dns->sock, qbuffer, len, 0) != len) {
-						dns->head = 0;
-						dns->rear = 0;
-						closesocket(dns->sock);
-						dns->sock = INVALID_SOCKET;
+					if(send(rdns->sock, ldns->buffer, len, 0) != len) {
+						rdns->head = 0;
+						rdns->rear = 0;
+						closesocket(rdns->sock);
+						rdns->sock = INVALID_SOCKET;
 						rhdr->rcode = 2;
 					}
 				}
@@ -173,15 +177,14 @@ static void process_query(PROXY_ENGINE *engine)
 				transport_cache_delete(tcache);
 		}
 	}
-	if(rhdr->rcode != 0) {
-		sendto(engine->server, rbuffer, sizeof(DNS_HDR), 0, (struct sockaddr*)&source, sizeof(struct sockaddr_in));
-		return;
-	}
+	if(rhdr->rcode != 0)
+		sendto(ldns->sock, rbuffer, sizeof(DNS_HDR), 0, (struct sockaddr*)&source, sizeof(struct sockaddr_in));
 }
 
-static void process_response(SOCKET sock, char* buffer, int size)
+static void process_response(char* buffer, int size)
 {
 	DNS_HDR *hdr;
+	LOCAL_DNS *ldns;
 	TRANSPORT_CACHE *cache;
 
 	hdr = (DNS_HDR*)buffer;
@@ -190,43 +193,44 @@ static void process_response(SOCKET sock, char* buffer, int size)
 
 	cache = transport_cache_search(ntohs(hdr->id));
 	if(cache) {
+		ldns = (LOCAL_DNS*)cache->context;
 		hdr->id = htons(cache->old_id);
-		sendto(sock, buffer, size, 0, (struct sockaddr*)&cache->source, sizeof(struct sockaddr_in));
+		sendto(ldns->sock, buffer, size, 0, (struct sockaddr*)&cache->source, sizeof(struct sockaddr_in));
 		transport_cache_delete(cache);
 	}
 }
 
-static void process_response_udp(REMOTE_DNS *dns)
+static void process_response_udp(REMOTE_DNS *rdns)
 {
 	int size;
 	socklen_t addrlen;
 	struct sockaddr_in source;
 
 	addrlen = sizeof(struct sockaddr_in);
-	size = recvfrom(dns->sock, dns->buffer, PACKAGE_SIZE, 0, (struct sockaddr*)&source, &addrlen);
-	if(size < sizeof(DNS_HDR))
+	size = recvfrom(rdns->sock, rdns->buffer, PACKAGE_SIZE, 0, (struct sockaddr*)&source, &addrlen);
+	if(size < (int)sizeof(DNS_HDR))
 		return;
 
-	if(source.sin_addr.s_addr != dns->addr.sin_addr.s_addr)
+	if(source.sin_addr.s_addr != rdns->addr.sin_addr.s_addr)
 		return;
 
-	process_response(dns->engine->server, dns->buffer, size);
+	process_response(rdns->buffer, size);
 }
 
-static void process_response_tcp(REMOTE_DNS *dns)
+static void process_response_tcp(REMOTE_DNS *rdns)
 {
 	char *pos;
 	int to_down, size;
 	unsigned int len, buflen;
 
 	to_down = 0;
-	size = recv(dns->sock, dns->buffer + dns->rear, dns->capacity - dns->rear, 0);
+	size = recv(rdns->sock, rdns->buffer + rdns->rear, rdns->capacity - rdns->rear, 0);
 	if(size < 1)
 		to_down = 1;
 	else {
-		dns->rear += size;
-		while((buflen = dns->rear - dns->head) > sizeof(unsigned short)) {
-			pos = dns->buffer + dns->head;
+		rdns->rear += size;
+		while((buflen = rdns->rear - rdns->head) > sizeof(unsigned short)) {
+			pos = rdns->buffer + rdns->head;
 			len = ntohs(*(unsigned short*)pos);
 			if(len > PACKAGE_SIZE) {
 				to_down = 1;
@@ -234,30 +238,32 @@ static void process_response_tcp(REMOTE_DNS *dns)
 			}
 			if(len + sizeof(unsigned short) > buflen)
 				break;
-			process_response(dns->engine->server, pos + sizeof(unsigned short), len);
-			dns->head += len + sizeof(unsigned short);
+			process_response(pos + sizeof(unsigned short), len);
+			rdns->head += len + sizeof(unsigned short);
 		}
 		if(!to_down) {
-			if(dns->head == dns->rear) {
-				dns->head = 0;
-				dns->rear = 0;
+			if(rdns->head == rdns->rear) {
+				rdns->head = 0;
+				rdns->rear = 0;
 			}
-			else if(dns->head > PACKAGE_SIZE) {
-				len = dns->rear - dns->head;
-				memmove(dns->buffer, dns->buffer + dns->head, len);
-				dns->head = 0;
-				dns->rear = len;
+			else if(rdns->head > PACKAGE_SIZE) {
+				len = rdns->rear - rdns->head;
+				memmove(rdns->buffer, rdns->buffer + rdns->head, len);
+				rdns->head = 0;
+				rdns->rear = len;
 			}
 		}
 	}
 
 	if(to_down){
-		dns->head = 0;
-		dns->rear = 0;
-		closesocket(dns->sock);
-		dns->sock = INVALID_SOCKET;
+		rdns->head = 0;
+		rdns->rear = 0;
+		closesocket(rdns->sock);
+		rdns->sock = INVALID_SOCKET;
 	}
 }
+
+static PROXY_ENGINE g_engine;
 
 static int dnsproxy(unsigned short local_port, const char* remote_addr, unsigned short remote_port, int remote_tcp)
 {
@@ -266,67 +272,73 @@ static int dnsproxy(unsigned short local_port, const char* remote_addr, unsigned
 	struct timeval timeout;
 	struct sockaddr_in addr;
 	time_t current, last_clean;
-	PROXY_ENGINE _engine, *engine = &_engine;
-	REMOTE_DNS *dns = &_engine.primary;
+#ifdef _WIN32
+	BOOL bNewBehavior = FALSE;
+	DWORD dwBytesReturned = 0;
+#endif
+	PROXY_ENGINE *engine = &g_engine;
+	LOCAL_DNS *ldns = &engine->local;
+	REMOTE_DNS *rdns = &engine->remote;
 
-	engine = &_engine;
-	memset(&_engine, 0, sizeof(PROXY_ENGINE));
-
-	dns->engine = engine;
-	dns->tcp = remote_tcp;
-	dns->sock = INVALID_SOCKET;
-	dns->addr.sin_family = AF_INET;
-	dns->addr.sin_addr.s_addr = inet_addr(remote_addr);
-	dns->addr.sin_port = htons(remote_port);
-	dns->head = 0;
-	dns->rear = 0;
-	dns->capacity = sizeof(dns->buffer);
-
-	engine->server = socket(AF_INET, SOCK_DGRAM, 0);
-	if(engine->server == INVALID_SOCKET) {
+	ldns->sock = socket(AF_INET, SOCK_DGRAM, 0);
+	if(ldns->sock == INVALID_SOCKET) {
 		perror("create socket");
 		return -1;
 	}
-	setsockopt(engine->server, SOL_SOCKET, SO_REUSEADDR, (void*)&enable, sizeof(enable));
+	setsockopt(ldns->sock, SOL_SOCKET, SO_REUSEADDR, (void*)&enable, sizeof(enable));
+#ifdef _WIN32
+	WSAIoctl(ldns->sock, SIO_UDP_CONNRESET, &bNewBehavior, sizeof(bNewBehavior), NULL, 0, &dwBytesReturned, NULL, NULL);
+#endif
 	memset(&addr, 0, sizeof(addr));
 	addr.sin_family = AF_INET;
 	addr.sin_addr.s_addr = INADDR_ANY;
 	addr.sin_port = htons(local_port);
-	if(bind(engine->server, (struct sockaddr*)&addr, sizeof(addr)) != 0) {
+	if(bind(ldns->sock, (struct sockaddr*)&addr, sizeof(addr)) != 0) {
 		perror("bind service port");
 		return -1;
 	}
 
-	if(!dns->tcp) {
-		dns->sock = socket(AF_INET, SOCK_DGRAM, 0);
-		if(dns->sock == INVALID_SOCKET) {
+	rdns->tcp = remote_tcp;
+	rdns->sock = INVALID_SOCKET;
+	rdns->addr.sin_family = AF_INET;
+	rdns->addr.sin_addr.s_addr = inet_addr(remote_addr);
+	rdns->addr.sin_port = htons(remote_port);
+	rdns->head = 0;
+	rdns->rear = 0;
+	rdns->capacity = sizeof(rdns->buffer);
+	if(!rdns->tcp) {
+		rdns->sock = socket(AF_INET, SOCK_DGRAM, 0);
+		if(rdns->sock == INVALID_SOCKET) {
 			perror("create socket");
 			return -1;
 		}
+#ifdef _WIN32
+		WSAIoctl(rdns->sock, SIO_UDP_CONNRESET, &bNewBehavior, sizeof(bNewBehavior), NULL, 0, &dwBytesReturned, NULL, NULL);
+#endif
 	}
 
 	last_clean = time(&current);
 	while(1) {
 		FD_ZERO(&readfds);
-		FD_SET(engine->server, &readfds);
-		maxfd = (int)engine->server;
-		if(dns->sock != INVALID_SOCKET) {
-			FD_SET(dns->sock, &readfds);
-			if(maxfd < (int)dns->sock)
-				maxfd = (int)dns->sock;
+		FD_SET(ldns->sock, &readfds);
+		maxfd = (int)ldns->sock;
+		if(rdns->sock != INVALID_SOCKET) {
+			FD_SET(rdns->sock, &readfds);
+			if(maxfd < (int)rdns->sock)
+				maxfd = (int)rdns->sock;
 		}
 		timeout.tv_sec = CLEAN_TIME;
 		timeout.tv_usec = 0;
 		fds = select(maxfd + 1, &readfds, NULL, NULL, &timeout);
 		if(fds > 0) {
-			if(dns->sock != INVALID_SOCKET
-				&& FD_ISSET(dns->sock, &readfds)) {
-				if(dns->tcp)
-					process_response_tcp(dns);
+			if(rdns->sock != INVALID_SOCKET
+				&& FD_ISSET(rdns->sock, &readfds)) {
+				if(rdns->tcp)
+					process_response_tcp(rdns);
 				else
-					process_response_udp(dns);
+					process_response_udp(rdns);
 			}
-			if(FD_ISSET(engine->server, &readfds))
+			if(FD_ISSET(ldns->sock, &readfds))
 				process_query(engine);
 		}
 		if(fds == 0 || time(&current) - last_clean > CLEAN_TIME) {
