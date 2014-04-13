@@ -48,6 +48,8 @@
 #include "embed/rbtree.h"
 #include "embed/xgetopt.h"
 
+#pragma pack(push,1)
+
 typedef struct {
 	unsigned short id;       // identification number
 	unsigned char rd :1;     // recursion desired
@@ -79,14 +81,20 @@ typedef struct {
 	char rd_data[0];
 } DNS_RRS;
 
+#pragma pack(pop)
+
 typedef struct {
 	struct rbnode rb_name;
+	struct rbnode rb_expire;
+	time_t expire;
 	struct in_addr addr;
-	char domain[1];
+	char domain[0];
 } DOMAIN_CACHE;
 
 void domain_cache_init(const char* file);
 DOMAIN_CACHE* domain_cache_search(char* domain);
+void domain_cache_append(char* domain, int dlen, unsigned int ttl, struct in_addr *addr);
+void domain_cache_clean(time_t current);
 
 typedef struct {
 	struct rbnode rb_new;
@@ -102,4 +110,4 @@ void transport_cache_init(unsigned short timeout);
 TRANSPORT_CACHE* transport_cache_search(unsigned short new_id);
 TRANSPORT_CACHE* transport_cache_insert(unsigned short old_id, struct sockaddr_in *address, void *context);
 void transport_cache_delete(TRANSPORT_CACHE *cache);
-void transport_cache_clean();
+void transport_cache_clean(time_t current);

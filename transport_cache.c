@@ -52,8 +52,7 @@ void transport_cache_init(unsigned short timeout)
 
 TRANSPORT_CACHE* transport_cache_search(unsigned short new_id)
 {
-	struct rbnode *node;
-	node = rbtree_search(&g_cache.rb_new, &new_id);
+	struct rbnode *node = rbtree_search(&g_cache.rb_new, &new_id);
 	if(node == RBNODE_NULL)
 		return NULL;
 	return rbtree_entry(node, TRANSPORT_CACHE, rb_new);
@@ -83,15 +82,13 @@ void transport_cache_delete(TRANSPORT_CACHE *cache)
 	free(cache);
 }
 
-void transport_cache_clean()
+void transport_cache_clean(time_t current)
 {
-	time_t current;
-	TRANSPORT_CACHE* cache;
 	struct rbnode *node;
+	TRANSPORT_CACHE* cache;
 
-	time(&current);
 	while(!rbtree_empty(&g_cache.rb_expire)) {
-		node = rbtree_last(&g_cache.rb_expire);
+		node = rbtree_first(&g_cache.rb_expire);
 		cache = rbtree_entry(node, TRANSPORT_CACHE, rb_expire);
 		if(cache->expire > current)
 			break;

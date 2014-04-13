@@ -49,8 +49,8 @@ static void process_query(PROXY_ENGINE *engine)
 {
 	LOCAL_DNS *ldns;
 	REMOTE_DNS *rdns;
-	DNS_QDS *qes, *rqes;
 	DNS_HDR *hdr, *rhdr;
+	DNS_QDS *qds, *rqds;
 	DOMAIN_CACHE *dcache;
 	TRANSPORT_CACHE *tcache;
 	socklen_t addrlen;
@@ -58,6 +58,7 @@ static void process_query(PROXY_ENGINE *engine)
 	char *pos, *head, *rear;
 	char *buffer, domain[PACKAGE_SIZE], rbuffer[PACKAGE_SIZE];
 	int size, len, dlen, qd_count, q_len;
+	time_t current;
 
 	ldns = &engine->local;
 	rdns = &engine->remote;
@@ -76,7 +77,7 @@ static void process_query(PROXY_ENGINE *engine)
 	rhdr->qr = 1;
 	q_len = 0;
 	qd_count = ntohs(hdr->qd_count);
-	qes = NULL;
+	qds = NULL;
 	head = buffer + sizeof(DNS_HDR);
 	rear = buffer + size;
 	if(hdr->qr != 0 || hdr->tc != 0 || qd_count < 1)
@@ -97,8 +98,8 @@ static void process_query(PROXY_ENGINE *engine)
 					domain[dlen++] = (char)tolower(*pos++);
 			}
 			else {
-				qes = (DNS_QDS*) pos;
-				if(ntohs(qes->classes) != 0x01)
+				qds = (DNS_QDS*) pos;
+				if(ntohs(qds->classes) != 0x01)
 					rhdr->rcode = 4;
 				else {
 					pos += sizeof(DNS_QDS);
@@ -110,7 +111,7 @@ static void process_query(PROXY_ENGINE *engine)
 		domain[dlen] = '\0';
 	}
 
-	if(rhdr->rcode == 0 && qd_count == 1 && ntohs(qes->type) == 0x01) {
+	if(rhdr->rcode == 0 && qd_count == 1 && ntohs(qds->type) == 0x01) {
 		dcache = domain_cache_search(domain);
 		if(dcache) {
 			rhdr->qd_count = htons(1);
@@ -120,11 +121,16 @@ static void process_query(PROXY_ENGINE *engine)
 			pos += q_len;
 			*pos++ = 0xc0;
 			*pos++ = 0x0c;
-			rqes = (DNS_QDS*)pos;
-			rqes->type = qes->type;
-			rqes->classes = qes->classes;
+			rqds = (DNS_QDS*)pos;
+			rqds->type = qds->type;
+			rqds->classes = qds->classes;
 			pos += sizeof(DNS_QDS);
-			*(unsigned int*)pos = htonl(600);
+			if(dcache->expire == 0)
+				*(unsigned int*)pos = htonl(600);
+			else if(time(&current) >= dcache->expire)
+				*(unsigned int*)pos = htonl(1);
+			else
+				*(unsigned int*)pos = htonl((unsigned int)(dcache->expire - current));
 			pos += sizeof(unsigned int);
 			*(unsigned short*)pos = htons(4);
 			pos += sizeof(unsigned short);
@@ -184,12 +190,82 @@ static void process_query(PROXY_ENGINE *engine)
 static void process_response(char* buffer, int size)
 {
 	DNS_HDR *hdr;
+	DNS_QDS *qds;
+	DNS_RRS *rrs;
 	LOCAL_DNS *ldns;
 	TRANSPORT_CACHE *cache;
+	char domain[PACKAGE_SIZE];
+	char *pos, *rear;
+	int badfmt, len, dlen;
+	unsigned short qd_count, an_count;
 
 	hdr = (DNS_HDR*)buffer;
-	if(hdr->qr != 1 || hdr->tc != 0 || ntohs(hdr->qd_count) <1 || ntohs(hdr->an_count) < 1)
+	qd_count = ntohs(hdr->qd_count);
+	an_count = ntohs(hdr->an_count);
+	if(hdr->qr != 1 || hdr->tc != 0 || qd_count <1 || an_count < 1)
 		return;
+
+	badfmt = 0;
+	qds = NULL;
+	pos = buffer + sizeof(DNS_HDR);
+	rear = buffer + size;
+	if(qd_count == 1) {
+		dlen = 0;
+		while(pos < rear) {
+			len = (int)*pos++;
+			if(len < 0 || len > 63 || (pos + len) > (rear - sizeof(DNS_QDS))) {
+				badfmt = 1;
+				break;
+			}
+			if(len > 0) {
+				if(dlen > 0)
+					domain[dlen++] = '.';
+				while(len-- > 0)
+					domain[dlen++] = (char)tolower(*pos++);
+			}
+			else {
+				qds = (DNS_QDS*) pos;
+				if(ntohs(qds->classes) != 0x01)
+					badfmt = 1;
+				else
+					pos += sizeof(DNS_QDS);
+				break;
+			}
+		}
+		domain[dlen] = '\0';
+	}
+	if(badfmt == 0 && qds && ntohs(qds->type) == 0x01) {
+		while(badfmt == 0 && pos < rear && an_count > 0) {
+			rrs = NULL;
+			if((unsigned char)*pos == 0xc0) {
+				pos += 2;
+				rrs = (DNS_RRS*) pos;
+			}
+			else {
+				while(pos < rear) {
+					len = (int)*pos++;
+					if(len < 0 || len > 63 || (pos + len) > (rear - sizeof(DNS_QDS))) {
+						badfmt = 1;
+						break;
+					}
+					if(len == 0) {
+						rrs = (DNS_RRS*) pos;
+						break;
+					}
+				}
+			}
+			if(rrs == NULL || ntohs(rrs->classes) != 0x01)
+				badfmt = 1;
+			else {
+				-- an_count;
+				pos += sizeof(DNS_RRS) + ntohs(rrs->rd_length);
+				if(ntohs(rrs->type) == 0x01 && ntohl(rrs->ttl) > 0 && ntohs(rrs->rd_length) == 4) {
+					domain_cache_append(domain, dlen, ntohl(rrs->ttl), (struct in_addr*)rrs->rd_data);
+					break;
+				}
+			}
+		}
+	}
 
 	cache = transport_cache_search(ntohs(hdr->id));
 	if(cache) {
@@ -341,9 +417,10 @@ static int dnsproxy(unsigned short local_port, const char* remote_addr, unsigned
 			if(FD_ISSET(ldns->sock, &readfds))
 				process_query(engine);
 		}
-		if(fds == 0 || time(&current) - last_clean > CLEAN_TIME) {
-			transport_cache_clean();
-			last_clean = fds == 0? time(NULL): current;
+		if(time(&current) - last_clean > CLEAN_TIME || fds == 0) {
+			last_clean = current;
+			domain_cache_clean(current);
+			transport_cache_clean(current);
 		}
 	}
 	return 0;
