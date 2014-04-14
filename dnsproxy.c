@@ -15,8 +15,8 @@
 #define VERSION "development"
 #endif
 
-#define CLEAN_TIME 8
 #define PACKAGE_SIZE 8192
+#define CACHE_CLEAN_TIME (MIN_TTL - 1)
 
 #if defined(_MSC_VER)
 #pragma comment(lib,"ws2_32")
@@ -126,9 +126,9 @@ static void process_query(PROXY_ENGINE *engine)
 			rqds->classes = qds->classes;
 			pos += sizeof(DNS_QDS);
 			if(dcache->expire == 0)
-				*(unsigned int*)pos = htonl(600);
+				*(unsigned int*)pos = htonl(MAX_TTL);
 			else if(time(&current) >= dcache->expire)
-				*(unsigned int*)pos = htonl(1);
+				*(unsigned int*)pos = htonl(MIN_TTL);
 			else
 				*(unsigned int*)pos = htonl((unsigned int)(dcache->expire - current));
 			pos += sizeof(unsigned int);
@@ -403,7 +403,7 @@ static int dnsproxy(unsigned short local_port, const char* remote_addr, unsigned
 			if(maxfd < (int)rdns->sock)
 				maxfd = (int)rdns->sock;
 		}
-		timeout.tv_sec = CLEAN_TIME;
+		timeout.tv_sec = CACHE_CLEAN_TIME;
 		timeout.tv_usec = 0;
 		fds = select(maxfd + 1, &readfds, NULL, NULL, &timeout);
 		if(fds > 0) {
@@ -417,7 +417,7 @@ static int dnsproxy(unsigned short local_port, const char* remote_addr, unsigned
 			if(FD_ISSET(ldns->sock, &readfds))
 				process_query(engine);
 		}
-		if(time(&current) - last_clean > CLEAN_TIME || fds == 0) {
+		if(time(&current) - last_clean > CACHE_CLEAN_TIME || fds == 0) {
 			last_clean = current;
 			domain_cache_clean(current);
 			transport_cache_clean(current);

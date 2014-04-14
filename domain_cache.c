@@ -126,10 +126,10 @@ void domain_cache_append(char* domain, int dlen, unsigned int ttl, struct in_add
 	DOMAIN_CACHE *cache = (DOMAIN_CACHE*)calloc(1, sizeof(DOMAIN_CACHE) + dlen + 1);
 	if(cache) {
 		if(ttl > 0) {
-			if(ttl > 3600)
-				ttl = 3600;
-			else if(ttl < 60)
-				ttl = 60;
+			if(ttl > MAX_TTL)
+				ttl = MAX_TTL;
+			else if(ttl < MIN_TTL)
+				ttl = MIN_TTL;
 			cache->expire = time(NULL) + ttl;
 		}
 		memcpy(&cache->addr, addr, sizeof(struct in_addr));

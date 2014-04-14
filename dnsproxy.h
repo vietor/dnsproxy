@@ -83,6 +83,9 @@ typedef struct {
 
 #pragma pack(pop)
 
+#define MIN_TTL 10
+#define MAX_TTL (30 * 60)
+
 typedef struct {
 	struct rbnode rb_name;
 	struct rbnode rb_expire;
