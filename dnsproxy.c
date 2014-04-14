@@ -16,7 +16,7 @@
 #endif
 
 #define PACKAGE_SIZE 8192
-#define CACHE_CLEAN_TIME (MIN_TTL - 1)
+#define CACHE_CLEAN_TIME (MIN_TTL / 2 + 1)
 
 #if defined(_MSC_VER)
 #pragma comment(lib,"ws2_32")
@@ -128,7 +128,7 @@ static void process_query(PROXY_ENGINE *engine)
 			if(dcache->expire == 0)
 				*(unsigned int*)pos = htonl(MAX_TTL);
 			else if(time(&current) >= dcache->expire)
-				*(unsigned int*)pos = htonl(MIN_TTL);
+				*(unsigned int*)pos = htonl(1);
 			else
 				*(unsigned int*)pos = htonl((unsigned int)(dcache->expire - current));
 			pos += sizeof(unsigned int);
