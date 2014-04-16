@@ -101,7 +101,7 @@ void domain_cache_clean(time_t current);
 
 typedef struct {
 	struct rbnode rb_new;
-	struct rbnode rb_expire;
+	struct list_head list;
 	void *context;
 	time_t expire;
 	unsigned short new_id;

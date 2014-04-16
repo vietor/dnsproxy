@@ -15,7 +15,7 @@ static struct {
 	unsigned short index;
 	unsigned short timeout;
 	struct rbtree rb_new;
-	struct rbtree rb_expire;
+	struct list_head list;
 } g_cache;
 
 static int new_search(const void* k, const struct rbnode* r)
@@ -33,21 +33,13 @@ static int new_compare(const struct rbnode* l, const struct rbnode* r)
 	return (int)left->new_id - right->new_id;
 }
 
-static int expire_compare(const struct rbnode* l, const struct rbnode* r)
-{
-	TRANSPORT_CACHE *left, *right;
-	left = rbtree_entry(l, TRANSPORT_CACHE, rb_expire);
-	right = rbtree_entry(r, TRANSPORT_CACHE, rb_expire);
-	return (int)(left->expire - right->expire);
-}
-
 void transport_cache_init(unsigned short timeout)
 {
 	g_cache.count = 0;
 	g_cache.timeout = timeout;
 	g_cache.index = (unsigned short)rand();
 	rbtree_init(&g_cache.rb_new, new_search, new_compare);
-	rbtree_init(&g_cache.rb_expire, NULL, expire_compare);
+	list_init(&g_cache.list);
 }
 
 TRANSPORT_CACHE* transport_cache_search(unsigned short new_id)
@@ -69,27 +61,26 @@ TRANSPORT_CACHE* transport_cache_insert(unsigned short old_id, struct sockaddr_i
 	cache->old_id = old_id;
 	memcpy(&cache->source, address, sizeof(struct sockaddr_in));
 	++g_cache.count;
+	list_insert(&g_cache.list, &cache->list);
 	rbtree_insert(&g_cache.rb_new, &cache->rb_new);
-	rbtree_insert(&g_cache.rb_expire, &cache->rb_expire);
 	return cache;
 }
 
 void transport_cache_delete(TRANSPORT_CACHE *cache)
 {
 	--g_cache.count;
+	list_remove(&cache->list);
 	rbtree_delete(&g_cache.rb_new, &cache->rb_new);
-	rbtree_delete(&g_cache.rb_expire, &cache->rb_expire);
 	free(cache);
 }
 
 void transport_cache_clean(time_t current)
 {
-	struct rbnode *node;
-	TRANSPORT_CACHE* cache;
+	TRANSPORT_CACHE *cache, *tmp;
 
-	while(!rbtree_empty(&g_cache.rb_expire)) {
-		node = rbtree_first(&g_cache.rb_expire);
-		cache = rbtree_entry(node, TRANSPORT_CACHE, rb_expire);
+	if(list_empty(&g_cache.list))
+		return;
+	list_for_each_safe(cache, tmp, &g_cache.list, TRANSPORT_CACHE, list) {
 		if(cache->expire > current)
 			break;
 		transport_cache_delete(cache);
