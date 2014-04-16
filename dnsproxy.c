@@ -44,6 +44,7 @@ typedef struct {
 } PROXY_ENGINE;
 
 static const int enable = 1;
+static int disable_cache = 0;
 
 static void process_query(PROXY_ENGINE *engine)
 {
@@ -205,6 +206,17 @@ static void process_response(char* buffer, int size)
 	if(hdr->qr != 1 || hdr->tc != 0 || qd_count <1 || an_count < 1)
 		return;
 
+	cache = transport_cache_search(ntohs(hdr->id));
+	if(cache) {
+		ldns = (LOCAL_DNS*)cache->context;
+		hdr->id = htons(cache->old_id);
+		sendto(ldns->sock, buffer, size, 0, (struct sockaddr*)&cache->source, sizeof(struct sockaddr_in));
+		transport_cache_delete(cache);
+	}
+
+	if(disable_cache)
+		return;
+
 	badfmt = 0;
 	qds = NULL;
 	pos = buffer + sizeof(DNS_HDR);
@@ -265,14 +277,6 @@ static void process_response(char* buffer, int size)
 				}
 			}
 		}
-	}
-
-	cache = transport_cache_search(ntohs(hdr->id));
-	if(cache) {
-		ldns = (LOCAL_DNS*)cache->context;
-		hdr->id = htons(cache->old_id);
-		sendto(ldns->sock, buffer, size, 0, (struct sockaddr*)&cache->source, sizeof(struct sockaddr_in));
-		transport_cache_delete(cache);
 	}
 }
 
@@ -435,6 +439,7 @@ struct xoption options[] = {
 	{'P', "remote-port", xargument_required, NULL, -1},
 	{'R', "remote-addr", xargument_required, NULL, -1},
 	{'f', "hosts-file", xargument_required, NULL, -1},
+	{0, "disable-cache", xargument_no, &disable_cache, 1},
 	{0, NULL, xargument_no, NULL, 0},
 };
 
@@ -475,6 +480,8 @@ int main(int argc, const char* argv[])
 	opt = xgetopt(argc, argv, options, &optind, &optarg);
 	while(opt != -1) {
 		switch(opt) {
+		case 0:
+			break;
 		case 'p':
 			local_port = (unsigned short)atoi(optarg);
 			break;
@@ -545,10 +552,11 @@ int main(int argc, const char* argv[])
 #endif
 
 	printf("%s"
-		" * runing at %d\n"
+		" * runing at %d%s\n"
 		" * transport to %s:%d,%s\n"
 		, ascii_logo
 		, local_port
+		, disable_cache? ", cache: off": ""
 		, remote_addr
 		, remote_port
 		, remote_tcp? "tcp": "udp");
