@@ -90,13 +90,17 @@ typedef struct {
 	struct rbnode rb_name;
 	struct rbnode rb_expire;
 	time_t expire;
-	struct in_addr addr;
-	char domain[0];
+	time_t timestamp;
+	char *domain;
+	char *answer;
+	unsigned short an_count;
+	unsigned short an_length;
+	char buffer[0];
 } DOMAIN_CACHE;
 
 void domain_cache_init(const char* file);
 DOMAIN_CACHE* domain_cache_search(char* domain);
-void domain_cache_append(char* domain, int dlen, unsigned int ttl, struct in_addr *addr);
+void domain_cache_append(char* domain, int d_length, unsigned int ttl, unsigned short an_count, unsigned short an_length, char *answer);
 void domain_cache_clean(time_t current);
 
 typedef struct {

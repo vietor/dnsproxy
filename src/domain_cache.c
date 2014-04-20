@@ -61,9 +61,11 @@ static char* skip_to_space(char* p)
 void domain_cache_init(const char* hosts_file)
 {
 	FILE *fp;
-	struct in_addr addr;
+	DNS_QDS *qds;
 	DOMAIN_CACHE* cache;
-	char line[8192];
+	struct in_addr addr;
+	unsigned short an_length;
+	char line[8192], answer[4096];
 	char *rear, *rlimit, *ip, *domain, *pos;
 
 	g_cache.count = 0;
@@ -90,6 +92,20 @@ void domain_cache_init(const char* hosts_file)
 			if(addr.s_addr == INADDR_NONE || addr.s_addr == INADDR_ANY)
 				continue;
 
+			pos = answer;
+			*pos++ = 0xc0;
+			*pos++ = 0x0c;
+			qds = (DNS_QDS*)pos;
+			qds->type = htons(0x01);
+			qds->classes = htons(0x01);
+			pos += sizeof(DNS_QDS);
+			*(unsigned int*)pos = htonl(MAX_TTL);
+			pos += sizeof(unsigned int);
+			*(unsigned short*)pos = htons(sizeof(addr));
+			pos += sizeof(unsigned short);
+			memcpy(pos, &addr, sizeof(addr));
+			an_length = pos - answer;
+
 			while(rear + 1 < rlimit) {
 				domain = skip_space(rear + 1);
 				if(is_space(*domain))
@@ -106,7 +122,7 @@ void domain_cache_init(const char* hosts_file)
 
 				cache = domain_cache_search(domain);
 				if(cache == NULL)
-					domain_cache_append(domain, rear - domain, 0, &addr);
+					domain_cache_append(domain, rear - domain, 0, 1, an_length, answer);
 			}
 		}
 		fclose(fp);
@@ -121,19 +137,19 @@ DOMAIN_CACHE* domain_cache_search(char* domain)
 	return rbtree_entry(node, DOMAIN_CACHE, rb_name);
 }
 
-void domain_cache_append(char* domain, int dlen, unsigned int ttl, struct in_addr *addr)
+void domain_cache_append(char* domain, int d_length, unsigned int ttl, unsigned short an_count, unsigned short an_length, char *answer)
 {
-	DOMAIN_CACHE *cache = (DOMAIN_CACHE*)calloc(1, sizeof(DOMAIN_CACHE) + dlen + 1);
+	DOMAIN_CACHE *cache = (DOMAIN_CACHE*)calloc(1, sizeof(DOMAIN_CACHE) + d_length + 1 + an_length);
 	if(cache) {
-		if(ttl > 0) {
-			if(ttl > MAX_TTL)
-				ttl = MAX_TTL;
-			else if(ttl < MIN_TTL)
-				ttl = MIN_TTL;
-			cache->expire = time(NULL) + ttl;
-		}
-		memcpy(&cache->addr, addr, sizeof(struct in_addr));
-		memcpy(cache->domain, domain, dlen);
+		time(&cache->timestamp);
+		if(ttl > 0)
+			cache->expire = cache->timestamp + ttl;
+		cache->domain = cache->buffer;
+		cache->answer = cache->buffer + d_length + 1;
+		memcpy(cache->domain, domain, d_length);
+		cache->an_count = an_count;
+		cache->an_length = an_length;
+		memcpy(cache->answer, answer, an_length);
 		++g_cache.count;
 		rbtree_insert(&g_cache.rb_name, &cache->rb_name);
 		if(ttl > 0)

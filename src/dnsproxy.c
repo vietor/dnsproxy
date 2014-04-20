@@ -51,15 +51,19 @@ static void process_query(PROXY_ENGINE *engine)
 	LOCAL_DNS *ldns;
 	REMOTE_DNS *rdns;
 	DNS_HDR *hdr, *rhdr;
-	DNS_QDS *qds, *rqds;
+	DNS_QDS *qds;
+	DNS_RRS *rrs;
 	DOMAIN_CACHE *dcache;
 	TRANSPORT_CACHE *tcache;
 	socklen_t addrlen;
 	struct sockaddr_in source;
 	char *pos, *head, *rear;
 	char *buffer, domain[PACKAGE_SIZE], rbuffer[PACKAGE_SIZE];
-	int size, len, dlen, qd_count, q_len;
+	int size, dlen;
 	time_t current;
+	unsigned char qlen;
+	unsigned int ttl, ttl_tmp;
+	unsigned short index, qd_count, q_len;
 
 	ldns = &engine->local;
 	rdns = &engine->remote;
@@ -87,15 +91,15 @@ static void process_query(PROXY_ENGINE *engine)
 		dlen = 0;
 		pos = head;
 		while(pos < rear) {
-			len = (int)*pos++;
-			if(len < 0 || len > 63 || (pos + len) > (rear - sizeof(DNS_QDS))) {
+			qlen = (unsigned char)*pos++;
+			if(qlen > 63 || (pos + qlen) > (rear - sizeof(DNS_QDS))) {
 				rhdr->rcode = 1;
 				break;
 			}
-			if(len > 0) {
+			if(qlen > 0) {
 				if(dlen > 0)
 					domain[dlen++] = '.';
-				while(len-- > 0)
+				while(qlen-- > 0)
 					domain[dlen++] = (char)tolower(*pos++);
 			}
 			else {
@@ -116,28 +120,45 @@ static void process_query(PROXY_ENGINE *engine)
 		dcache = domain_cache_search(domain);
 		if(dcache) {
 			rhdr->qd_count = htons(1);
-			rhdr->an_count = htons(1);
+			rhdr->an_count = htons(dcache->an_count);
 			pos = rbuffer + sizeof(DNS_HDR);
 			memcpy(pos, head, q_len);
 			pos += q_len;
-			*pos++ = 0xc0;
-			*pos++ = 0x0c;
-			rqds = (DNS_QDS*)pos;
-			rqds->type = qds->type;
-			rqds->classes = qds->classes;
-			pos += sizeof(DNS_QDS);
-			if(dcache->expire == 0)
-				*(unsigned int*)pos = htonl(MAX_TTL);
-			else if(time(&current) >= dcache->expire)
-				*(unsigned int*)pos = htonl(1);
-			else
-				*(unsigned int*)pos = htonl((unsigned int)(dcache->expire - current));
-			pos += sizeof(unsigned int);
-			*(unsigned short*)pos = htons(4);
-			pos += sizeof(unsigned short);
-			*(unsigned int*)pos = dcache->addr.s_addr;
-			pos += sizeof(unsigned int);
-			sendto(ldns->sock, rbuffer, pos - rbuffer, 0, (struct sockaddr*)&source, sizeof(struct sockaddr_in));
+			memcpy(pos, dcache->answer, dcache->an_length);
+			rear = pos + dcache->an_length;
+			if(dcache->expire > 0) {
+				if(time(&current) <= dcache->timestamp)
+					ttl = 1;
+				else
+					ttl = (unsigned int)(current - dcache->timestamp);
+				index = 0;
+				while(pos < rear && index++ < dcache->an_count) {
+					rrs = NULL;
+					if((unsigned char)*pos == 0xc0) {
+						pos += 2;
+						rrs = (DNS_RRS*) pos;
+					}
+					else {
+						while(pos < rear) {
+							qlen = (unsigned char)*pos++;
+							if(qlen > 0)
+								pos += qlen;
+							else {
+								rrs = (DNS_RRS*) pos;
+								break;
+							}
+						}
+					}
+					ttl_tmp = ntohl(rrs->ttl);
+					if(ttl_tmp <= ttl)
+						ttl_tmp = 1;
+					else
+						ttl_tmp -= ttl;
+					rrs->ttl = htonl(ttl_tmp);
+					pos += sizeof(DNS_RRS) + ntohs(rrs->rd_length);
+				}
+			}
+			sendto(ldns->sock, rbuffer, rear - rbuffer, 0, (struct sockaddr*)&source, sizeof(struct sockaddr_in));
 			return;
 		}
 	}
@@ -169,9 +190,9 @@ static void process_query(PROXY_ENGINE *engine)
 					rhdr->rcode = 2;
 				else{
 					pos = ldns->buffer;
-					len = size + sizeof(unsigned short);
 					*(unsigned short*)pos = htons((unsigned short)size);
-					if(send(rdns->sock, ldns->buffer, len, 0) != len) {
+					size += sizeof(unsigned short);
+					if(send(rdns->sock, ldns->buffer, size, 0) != size) {
 						rdns->head = 0;
 						rdns->rear = 0;
 						closesocket(rdns->sock);
@@ -196,9 +217,11 @@ static void process_response(char* buffer, int size)
 	LOCAL_DNS *ldns;
 	TRANSPORT_CACHE *cache;
 	char domain[PACKAGE_SIZE];
-	char *pos, *rear;
-	int badfmt, len, dlen;
-	unsigned short qd_count, an_count;
+	char *pos, *rear, *answer;
+	int badfmt, dlen;
+	unsigned char qlen;
+	unsigned int ttl, ttl_tmp;
+	unsigned short index, qd_count, an_count;
 
 	hdr = (DNS_HDR*)buffer;
 	qd_count = ntohs(hdr->qd_count);
@@ -224,15 +247,15 @@ static void process_response(char* buffer, int size)
 	if(qd_count == 1) {
 		dlen = 0;
 		while(pos < rear) {
-			len = (int)*pos++;
-			if(len < 0 || len > 63 || (pos + len) > (rear - sizeof(DNS_QDS))) {
+			qlen = (unsigned char)*pos++;
+			if(qlen > 63 || (pos + qlen) > (rear - sizeof(DNS_QDS))) {
 				badfmt = 1;
 				break;
 			}
-			if(len > 0) {
+			if(qlen > 0) {
 				if(dlen > 0)
 					domain[dlen++] = '.';
-				while(len-- > 0)
+				while(qlen-- > 0)
 					domain[dlen++] = (char)tolower(*pos++);
 			}
 			else {
@@ -247,7 +270,10 @@ static void process_response(char* buffer, int size)
 		domain[dlen] = '\0';
 	}
 	if(badfmt == 0 && qds && ntohs(qds->type) == 0x01) {
-		while(badfmt == 0 && pos < rear && an_count > 0) {
+		ttl = MAX_TTL;
+		index = 0;
+		answer = pos;
+		while(badfmt == 0 && pos < rear && index++ < an_count) {
 			rrs = NULL;
 			if((unsigned char)*pos == 0xc0) {
 				pos += 2;
@@ -255,12 +281,12 @@ static void process_response(char* buffer, int size)
 			}
 			else {
 				while(pos < rear) {
-					len = (int)*pos++;
-					if(len < 0 || len > 63 || (pos + len) > (rear - sizeof(DNS_QDS))) {
-						badfmt = 1;
+					qlen = (unsigned char)*pos++;
+					if(qlen > 63 || (pos + qlen) > (rear - sizeof(DNS_RRS)))
 						break;
-					}
-					if(len == 0) {
+					if(qlen > 0)
+						pos += qlen;
+					else {
 						rrs = (DNS_RRS*) pos;
 						break;
 					}
@@ -269,14 +295,14 @@ static void process_response(char* buffer, int size)
 			if(rrs == NULL || ntohs(rrs->classes) != 0x01)
 				badfmt = 1;
 			else {
-				-- an_count;
+				ttl_tmp = ntohl(rrs->ttl);
+				if(ttl_tmp < ttl)
+					ttl = ttl_tmp;
 				pos += sizeof(DNS_RRS) + ntohs(rrs->rd_length);
-				if(ntohs(rrs->type) == 0x01 && ntohl(rrs->ttl) > 0 && ntohs(rrs->rd_length) == 4) {
-					domain_cache_append(domain, dlen, ntohl(rrs->ttl), (struct in_addr*)rrs->rd_data);
-					break;
-				}
 			}
 		}
+		if(badfmt == 0)
+			domain_cache_append(domain, dlen, ttl, an_count, pos - answer, answer);
 	}
 }
 
