@@ -226,7 +226,7 @@ static void process_response(char* buffer, int size)
 	hdr = (DNS_HDR*)buffer;
 	qd_count = ntohs(hdr->qd_count);
 	an_count = ntohs(hdr->an_count);
-	if(hdr->qr != 1 || hdr->tc != 0 || qd_count <1 || an_count < 1)
+	if(hdr->qr != 1 || hdr->tc != 0 || qd_count < 1 || an_count < 1)
 		return;
 
 	cache = transport_cache_search(ntohs(hdr->id));
@@ -237,41 +237,38 @@ static void process_response(char* buffer, int size)
 		transport_cache_delete(cache);
 	}
 
-	if(disable_cache)
+	if(qd_count != 1 || disable_cache)
 		return;
 
-	badfmt = 0;
+	dlen = 0;
 	qds = NULL;
 	pos = buffer + sizeof(DNS_HDR);
 	rear = buffer + size;
-	if(qd_count == 1) {
-		dlen = 0;
-		while(pos < rear) {
-			qlen = (unsigned char)*pos++;
-			if(qlen > 63 || (pos + qlen) > (rear - sizeof(DNS_QDS))) {
-				badfmt = 1;
-				break;
-			}
-			if(qlen > 0) {
-				if(dlen > 0)
-					domain[dlen++] = '.';
-				while(qlen-- > 0)
-					domain[dlen++] = (char)tolower(*pos++);
-			}
-			else {
-				qds = (DNS_QDS*) pos;
-				if(ntohs(qds->classes) != 0x01)
-					badfmt = 1;
-				else
-					pos += sizeof(DNS_QDS);
-				break;
-			}
+	while(pos < rear) {
+		qlen = (unsigned char)*pos++;
+		if(qlen > 63 || (pos + qlen) > (rear - sizeof(DNS_QDS)))
+			break;
+		if(qlen > 0) {
+			if(dlen > 0)
+				domain[dlen++] = '.';
+			while(qlen-- > 0)
+				domain[dlen++] = (char)tolower(*pos++);
 		}
-		domain[dlen] = '\0';
+		else {
+			qds = (DNS_QDS*) pos;
+			if(ntohs(qds->classes) != 0x01)
+				qds = NULL;
+			else
+				pos += sizeof(DNS_QDS);
+			break;
+		}
 	}
-	if(badfmt == 0 && qds && ntohs(qds->type) == 0x01) {
+	domain[dlen] = '\0';
+
+	if(qds && ntohs(qds->type) == 0x01) {
 		ttl = MAX_TTL;
 		index = 0;
+		badfmt = 0;
 		answer = pos;
 		while(badfmt == 0 && pos < rear && index++ < an_count) {
 			rrs = NULL;
@@ -391,7 +388,7 @@ static int dnsproxy(unsigned short local_port, const char* remote_addr, unsigned
 		perror("create socket");
 		return -1;
 	}
-	setsockopt(ldns->sock, SOL_SOCKET, SO_REUSEADDR, (void*)&enable, sizeof(enable));
+	setsockopt(ldns->sock, SOL_SOCKET, SO_REUSEADDR, (char*)&enable, sizeof(enable));
 #ifdef _WIN32
 	WSAIoctl(ldns->sock, SIO_UDP_CONNRESET, &bNewBehavior, sizeof(bNewBehavior), NULL, 0, &dwBytesReturned, NULL, NULL);
 #endif
