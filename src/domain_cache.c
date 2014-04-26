@@ -104,6 +104,7 @@ void domain_cache_init(const char* hosts_file)
 			*(unsigned short*)pos = htons(sizeof(addr));
 			pos += sizeof(unsigned short);
 			memcpy(pos, &addr, sizeof(addr));
+			pos += sizeof(addr);
 			an_length = pos - answer;
 
 			while(rear + 1 < rlimit) {
