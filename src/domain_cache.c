@@ -121,9 +121,7 @@ void domain_cache_init(const char* hosts_file)
 					++ pos;
 				}
 
-				cache = domain_cache_search(domain);
-				if(cache == NULL)
-					domain_cache_append(domain, rear - domain, 0, 1, an_length, answer);
+				domain_cache_append(domain, rear - domain, 0, 1, an_length, answer);
 			}
 		}
 		fclose(fp);
@@ -140,6 +138,7 @@ DOMAIN_CACHE* domain_cache_search(char* domain)
 
 void domain_cache_append(char* domain, int d_length, unsigned int ttl, unsigned short an_count, unsigned short an_length, char *answer)
 {
+	struct rbnode *node;
 	DOMAIN_CACHE *cache = (DOMAIN_CACHE*)calloc(1, sizeof(DOMAIN_CACHE) + d_length + 1 + an_length);
 	if(cache) {
 		time(&cache->timestamp);
@@ -151,10 +150,15 @@ void domain_cache_append(char* domain, int d_length, unsigned int ttl, unsigned 
 		cache->an_count = an_count;
 		cache->an_length = an_length;
 		memcpy(cache->answer, answer, an_length);
-		++g_cache.count;
-		rbtree_insert(&g_cache.rb_name, &cache->rb_name);
-		if(ttl > 0)
-			rbtree_insert(&g_cache.rb_expire, &cache->rb_expire);
+		node = rbtree_insert_broken(&g_cache.rb_name, &cache->rb_name);
+		if(node != RBNODE_NULL)
+			free(cache);
+		else
+		{
+			++g_cache.count;
+			if(ttl > 0)
+				rbtree_insert(&g_cache.rb_expire, &cache->rb_expire);
+		}
 	}
 }
 

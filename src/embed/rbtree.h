@@ -62,14 +62,28 @@ static inline int rbnode_empty(struct rbnode *rbnode)
 	return rbnode->parent == RBNODE_EMPTY;
 }
 
-void rbtree_insert(struct rbtree *rbtree, struct rbnode *data);
 void rbtree_delete(struct rbtree *rbtree, struct rbnode *data);
+struct rbnode *rbtree_insert3(struct rbtree *rbtree, struct rbnode *data, int flag);
+
+static inline void rbtree_insert(struct rbtree *rbtree, struct rbnode *data)
+{
+	rbtree_insert3(rbtree, data, 0);
+}
+
+static inline struct rbnode *rbtree_insert_broken(struct rbtree *rbtree, struct rbnode *data)
+{
+	return rbtree_insert3(rbtree, data, 1);
+}
+
+static inline struct rbnode *rbtree_insert_replace(struct rbtree *rbtree, struct rbnode *data)
+{
+	return rbtree_insert3(rbtree, data, 2);
+}
 
 struct rbnode *rbtree_first(struct rbtree *rbtree);
 struct rbnode *rbtree_last(struct rbtree *rbtree);
 struct rbnode *rbtree_next(struct rbnode *rbtree);
 struct rbnode *rbtree_previous(struct rbnode *rbtree);
-
 struct rbnode *rbtree_search (struct rbtree *rbtree, void *context);
 
 #endif

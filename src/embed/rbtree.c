@@ -111,7 +111,18 @@ static void rbtree_insert_balance(struct rbtree *rbtree, struct rbnode *node)
 	rbtree->root->color = RBCOLOR_BLACK;
 }
 
-void rbtree_insert (struct rbtree *rbtree, struct rbnode *data)
+static inline void change_parent_ptr(struct rbtree* rbtree, struct rbnode* parent, struct rbnode* old, struct rbnode* new)
+{
+	if(parent == RBNODE_NULL)
+	{
+		if(rbtree->root == old) rbtree->root = new;
+		return;
+	}
+	if(parent->left == old) parent->left = new;
+	if(parent->right == old) parent->right = new;
+}
+
+struct rbnode *rbtree_insert3(struct rbtree *rbtree, struct rbnode *data, int flag)
 {
 	int r = 0;
 	struct rbnode *node = rbtree->root;
@@ -121,10 +132,28 @@ void rbtree_insert (struct rbtree *rbtree, struct rbnode *data)
 		parent = node;
 		r = rbtree->compare(data, node);
 
-		if (r < 0) {
+		if (r < 0)
 			node = node->left;
-		} else {
+		else if(r > 0 || flag == 0)
 			node = node->right;
+		else if(flag == 1) {
+			/* return exists node */
+			rbnode_init(data);
+			return node;
+		}
+		else {  /* flag == 2 */
+			/* return and replace exists node */
+			data->left = node->left;
+			data->right = node->right;
+			data->color = node->color;
+			if(node->left != RBNODE_NULL)
+				node->left->parent = data;
+			if(node->right != RBNODE_NULL)
+				node->right->parent = data;
+			data->parent = node->parent;
+			change_parent_ptr(rbtree, node->parent, node, data);
+			rbnode_init(node);
+			return node;
 		}
 	}
 
@@ -142,6 +171,7 @@ void rbtree_insert (struct rbtree *rbtree, struct rbnode *data)
 		rbtree->root = data;
 	}
 	rbtree_insert_balance(rbtree, data);
+	return RBNODE_NULL;
 }
 
 static inline void swap_ul(unsigned long* x, unsigned long* y)
@@ -152,17 +182,6 @@ static inline void swap_ul(unsigned long* x, unsigned long* y)
 static inline void swap_np(struct rbnode** x, struct rbnode** y)
 {
 	struct rbnode* t = *x; *x = *y; *y = t;
-}
-
-static inline void change_parent_ptr(struct rbtree* rbtree, struct rbnode* parent, struct rbnode* old, struct rbnode* new)
-{
-	if(parent == RBNODE_NULL)
-	{
-		if(rbtree->root == old) rbtree->root = new;
-		return;
-	}
-	if(parent->left == old) parent->left = new;
-	if(parent->right == old) parent->right = new;
 }
 
 static inline void change_child_ptr(struct rbnode* child, struct rbnode* old, struct rbnode* new)
@@ -275,6 +294,9 @@ static void rbtree_delete_balance(struct rbtree* rbtree, struct rbnode* child, s
 void rbtree_delete(struct rbtree *rbtree, struct rbnode *to_delete)
 {
 	struct rbnode *child;
+
+	if(rbnode_empty(to_delete))
+		return;
 
 	if(to_delete->left != RBNODE_NULL &&
 		to_delete->right != RBNODE_NULL)
