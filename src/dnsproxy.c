@@ -63,7 +63,7 @@ static void process_query(PROXY_ENGINE *engine)
 	time_t current;
 	unsigned char qlen;
 	unsigned int ttl, ttl_tmp;
-	unsigned short index, qd_count, q_len;
+	unsigned short index, q_len;
 
 	ldns = &engine->local;
 	rdns = &engine->remote;
@@ -81,11 +81,10 @@ static void process_query(PROXY_ENGINE *engine)
 	rhdr->id = hdr->id;
 	rhdr->qr = 1;
 	q_len = 0;
-	qd_count = ntohs(hdr->qd_count);
 	qds = NULL;
 	head = buffer + sizeof(DNS_HDR);
 	rear = buffer + size;
-	if(hdr->qr != 0 || hdr->tc != 0 || qd_count < 1)
+	if(hdr->qr != 0 || hdr->tc != 0 || ntohs(hdr->qd_count) != 1)
 		rhdr->rcode = 1;
 	else {
 		dlen = 0;
@@ -116,7 +115,7 @@ static void process_query(PROXY_ENGINE *engine)
 		domain[dlen] = '\0';
 	}
 
-	if(rhdr->rcode == 0 && qd_count == 1 && ntohs(qds->type) == 0x01) {
+	if(rhdr->rcode == 0 && ntohs(qds->type) == 0x01) {
 		dcache = domain_cache_search(domain);
 		if(dcache) {
 			rhdr->qd_count = htons(1);
@@ -221,12 +220,11 @@ static void process_response(char* buffer, int size)
 	int badfmt, dlen;
 	unsigned char qlen;
 	unsigned int ttl, ttl_tmp;
-	unsigned short index, qd_count, an_count;
+	unsigned short index, an_count;
 
 	hdr = (DNS_HDR*)buffer;
-	qd_count = ntohs(hdr->qd_count);
 	an_count = ntohs(hdr->an_count);
-	if(hdr->qr != 1 || hdr->tc != 0 || qd_count < 1 || an_count < 1)
+	if(hdr->qr != 1 || hdr->tc != 0 || ntohs(hdr->qd_count) != 1 || an_count < 1)
 		return;
 
 	cache = transport_cache_search(ntohs(hdr->id));
@@ -237,7 +235,7 @@ static void process_response(char* buffer, int size)
 		transport_cache_delete(cache);
 	}
 
-	if(qd_count != 1 || disable_cache)
+	if(disable_cache)
 		return;
 
 	dlen = 0;
