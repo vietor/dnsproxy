@@ -94,7 +94,7 @@ static int expire_compare(const struct rbnode* l, const struct rbnode* r)
 
 static inline int is_space(char c)
 {
-	return c == '\t' || c == ' ' || c == '\n';
+	return c == '\t' || c == ' ' || c == '\n' || c == '\r';
 }
 
 static char* skip_space(char* p)
