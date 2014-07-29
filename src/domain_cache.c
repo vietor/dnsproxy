@@ -21,6 +21,7 @@ static struct {
 typedef struct {
 	char* domain;
 	int length;
+	DOMAIN_CACHE* candidate;
 } SEARCH_CONTEXT;
 
 static int name_search(const void* c, const struct rbnode* r)
@@ -41,26 +42,46 @@ static int name_compare(const struct rbnode* l, const struct rbnode* r)
 
 static int wname_search(const void* c, const struct rbnode* r)
 {
-	int pos;
+	int ret, pos;
 	DOMAIN_CACHE *right;
 	SEARCH_CONTEXT *ctx = (SEARCH_CONTEXT*)c;
 	right = rbtree_entry(r, DOMAIN_CACHE, rb_name);
-	pos = ctx->length - right->length;
+	pos = ctx->length - right->d_length;
 	if(pos < 0)
 		return -1;
-	return strcmp(ctx->domain + pos, right->domain);
+	ret = strcmp(ctx->domain + pos, right->domain);
+	if(ret == 0) {
+		if(pos == 0)
+			ret = 0;
+		else if(right->p_length == 0) {
+			ret = 1;
+			ctx->candidate = right;
+		}
+		else {
+			ret = strncmp(ctx->domain, right->prefix, right->p_length);
+			if(ret == 0) {
+				ctx->candidate = right;
+				if(pos > right->p_length)
+					ret = 1;
+			}
+		}
+	}
+	return ret;
 }
 
 static int wname_compare(const struct rbnode* l, const struct rbnode* r)
 {
-	int pos;
+	int ret, pos;
 	DOMAIN_CACHE *left, *right;
 	left = rbtree_entry(l, DOMAIN_CACHE, rb_name);
 	right = rbtree_entry(r, DOMAIN_CACHE, rb_name);
-	pos = left->length - right->length;
+	pos = left->d_length - right->d_length;
 	if(pos < 0)
 		return -1;
-	return strcmp(left->domain + pos, right->domain);
+	ret = strcmp(left->domain + pos, right->domain);
+	if(ret == 0)
+		ret = strcmp(left->prefix, right->prefix);
+	return ret;
 }
 
 static int expire_compare(const struct rbnode* l, const struct rbnode* r)
@@ -92,14 +113,17 @@ static char* skip_to_space(char* p)
 
 static void name_append(char* domain, int d_length, unsigned short an_length, char *answer)
 {
+	char *pos;
 	struct rbnode *node;
 	DOMAIN_CACHE *cache = (DOMAIN_CACHE*)calloc(1, sizeof(DOMAIN_CACHE) + d_length + 1 + an_length);
 	if(cache) {
 		time(&cache->timestamp);
-		cache->domain = cache->buffer;
-		cache->answer = cache->buffer + d_length + 1;
-		cache->length = d_length;
+		pos = cache->buffer;
+		cache->domain = pos;
+		cache->d_length = d_length;
 		memcpy(cache->domain, domain, d_length);
+		pos += d_length + 1;
+		cache->answer = pos;
 		cache->an_count = 1;
 		cache->an_length = an_length;
 		memcpy(cache->answer, answer, an_length);
@@ -111,16 +135,24 @@ static void name_append(char* domain, int d_length, unsigned short an_length, ch
 	}
 }
 
-static void wname_append(char* domain, int d_length, unsigned short an_length, char *answer)
+static void wname_append(char* prefix, int p_length, char* domain, int d_length, unsigned short an_length, char *answer)
 {
+	char *pos;
 	struct rbnode *node;
-	DOMAIN_CACHE *cache = (DOMAIN_CACHE*)calloc(1, sizeof(DOMAIN_CACHE) + d_length + 1 + an_length);
+	DOMAIN_CACHE *cache = (DOMAIN_CACHE*)calloc(1, sizeof(DOMAIN_CACHE) + p_length + d_length + 2 + an_length);
 	if(cache) {
-		time(&cache->timestamp);
-		cache->domain = cache->buffer;
-		cache->answer = cache->buffer + d_length + 1;
-		cache->length = d_length;
-		memcpy(cache->domain, domain, d_length);
+		pos = cache->buffer;
+		cache->prefix = pos;
+		cache->p_length = p_length;
+		if(p_length > 0)
+			memcpy(cache->prefix, prefix, p_length);
+		pos += p_length + 1;
+		cache->domain = pos;
+		cache->d_length = d_length;
+		if(d_length > 0)
+			memcpy(cache->domain, domain, d_length);
+		pos += d_length + 1;
+		cache->answer = pos;
 		cache->an_count = 1;
 		cache->an_length = an_length;
 		memcpy(cache->answer, answer, an_length);
@@ -132,7 +164,6 @@ static void wname_append(char* domain, int d_length, unsigned short an_length, c
 	}
 }
 
-
 void domain_cache_init(const char* hosts_file)
 {
 	FILE *fp;
@@ -140,7 +171,7 @@ void domain_cache_init(const char* hosts_file)
 	struct in_addr addr;
 	unsigned short d_length, an_length;
 	char line[8192], answer[4096];
-	char *rear, *rlimit, *ip, *domain, *pos;
+	char *rear, *rlimit, *ip, *domain, *pos, *wildcard;
 
 	g_cache.count = 0;
 	rbtree_init(&g_cache.rb_name, name_search, name_compare);
@@ -195,11 +226,15 @@ void domain_cache_init(const char* hosts_file)
 					*pos = (char)tolower(*pos);
 					++ pos;
 				}
-				d_length = rear - domain;
-				if(d_length <3 || domain[0] != '*' || domain[1] != '.')
+				wildcard = strchr(domain, '*');
+				if(wildcard) {
+					*wildcard++ = '\0';
+					wname_append(domain, wildcard - domain - 1, wildcard, rear - wildcard, an_length, answer);
+				}
+				else {
+					d_length = rear - domain;
 					name_append(domain, d_length, an_length, answer);
-				else
-					wname_append(domain + 2, d_length - 2, an_length, answer);
+				}
 			}
 		}
 		fclose(fp);
@@ -209,16 +244,20 @@ void domain_cache_init(const char* hosts_file)
 DOMAIN_CACHE* domain_cache_search(char* domain)
 {
 	SEARCH_CONTEXT ctx;
-	struct rbnode *node;
+	const struct rbnode *node;
 	ctx.domain = domain;
 	ctx.length = strlen(domain);
+	ctx.candidate = NULL;
 	node = rbtree_search(&g_cache.rb_name, &ctx);
 	if(node == RBNODE_NULL) {
 		if(g_cache.wcount < 1)
 			return NULL;
 		node = rbtree_search(&g_cache.rb_wname, &ctx);
-		if(node == RBNODE_NULL)
-			return NULL;
+		if(node == RBNODE_NULL) {
+			if(!ctx.candidate)
+				return NULL;
+			node = &ctx.candidate->rb_name;
+		}
 	}
 	return rbtree_entry(node, DOMAIN_CACHE, rb_name);
 }
@@ -232,7 +271,7 @@ void domain_cache_append(char* domain, int d_length, unsigned int ttl, unsigned 
 		cache->expire = cache->timestamp + ttl;
 		cache->domain = cache->buffer;
 		cache->answer = cache->buffer + d_length + 1;
-		cache->length = d_length;
+		cache->d_length = d_length;
 		memcpy(cache->domain, domain, d_length);
 		cache->an_count = an_count;
 		cache->an_length = an_length;

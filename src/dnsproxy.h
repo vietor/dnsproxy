@@ -91,8 +91,10 @@ typedef struct {
 	struct rbnode rb_expire;
 	time_t expire;
 	time_t timestamp;
-	int length;
+	char *prefix;
+	int p_length;
 	char *domain;
+	int d_length;
 	char *answer;
 	unsigned short an_count;
 	unsigned short an_length;
