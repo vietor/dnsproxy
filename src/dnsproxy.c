@@ -217,25 +217,15 @@ static void process_response(char* buffer, int size)
 	TRANSPORT_CACHE *cache;
 	char domain[PACKAGE_SIZE];
 	char *pos, *rear, *answer;
-	int badfmt, dlen;
+	int badfmt, dlen, length;
 	unsigned char qlen;
 	unsigned int ttl, ttl_tmp;
 	unsigned short index, an_count;
 
+	length = size;
 	hdr = (DNS_HDR*)buffer;
 	an_count = ntohs(hdr->an_count);
 	if(hdr->qr != 1 || hdr->tc != 0 || ntohs(hdr->qd_count) != 1 || an_count < 1)
-		return;
-
-	cache = transport_cache_search(ntohs(hdr->id));
-	if(cache) {
-		ldns = (LOCAL_DNS*)cache->context;
-		hdr->id = htons(cache->old_id);
-		sendto(ldns->sock, buffer, size, 0, (struct sockaddr*)&cache->source, sizeof(struct sockaddr_in));
-		transport_cache_delete(cache);
-	}
-
-	if(disable_cache)
 		return;
 
 	dlen = 0;
@@ -296,8 +286,21 @@ static void process_response(char* buffer, int size)
 				pos += sizeof(DNS_RRS) + ntohs(rrs->rd_length);
 			}
 		}
-		if(badfmt == 0)
-			domain_cache_append(domain, dlen, ttl, an_count, pos - answer, answer);
+		if(badfmt == 0) {
+			hdr->nr_count = 0;
+			hdr->ns_count = 0;
+			length = pos - buffer;
+			if(!disable_cache)
+				domain_cache_append(domain, dlen, ttl, an_count, pos - answer, answer);
+		}
+	}
+
+	cache = transport_cache_search(ntohs(hdr->id));
+	if(cache) {
+		ldns = (LOCAL_DNS*)cache->context;
+		hdr->id = htons(cache->old_id);
+		sendto(ldns->sock, buffer, length, 0, (struct sockaddr*)&cache->source, sizeof(struct sockaddr_in));
+		transport_cache_delete(cache);
 	}
 }
 
