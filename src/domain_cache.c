@@ -21,7 +21,6 @@ static struct {
 typedef struct {
 	char* domain;
 	int length;
-	DOMAIN_CACHE* candidate;
 } SEARCH_CONTEXT;
 
 static int name_search(const void* c, const struct rbnode* r)
@@ -40,35 +39,6 @@ static int name_compare(const struct rbnode* l, const struct rbnode* r)
 	return strcmp(left->domain, right->domain);
 }
 
-static int wname_search(const void* c, const struct rbnode* r)
-{
-	int ret, pos;
-	DOMAIN_CACHE *right;
-	SEARCH_CONTEXT *ctx = (SEARCH_CONTEXT*)c;
-	right = rbtree_entry(r, DOMAIN_CACHE, rb_name);
-	pos = ctx->length - right->d_length;
-	if(pos < 0)
-		return -1;
-	ret = strcmp(ctx->domain + pos, right->domain);
-	if(ret == 0) {
-		if(pos == 0)
-			ret = 0;
-		else if(right->p_length == 0) {
-			ret = 1;
-			ctx->candidate = right;
-		}
-		else {
-			ret = strncmp(ctx->domain, right->prefix, right->p_length);
-			if(ret == 0) {
-				ctx->candidate = right;
-				if(pos > right->p_length)
-					ret = 1;
-			}
-		}
-	}
-	return ret;
-}
-
 static int wname_compare(const struct rbnode* l, const struct rbnode* r)
 {
 	int ret, pos;
@@ -76,11 +46,24 @@ static int wname_compare(const struct rbnode* l, const struct rbnode* r)
 	left = rbtree_entry(l, DOMAIN_CACHE, rb_name);
 	right = rbtree_entry(r, DOMAIN_CACHE, rb_name);
 	pos = left->d_length - right->d_length;
-	if(pos < 0)
-		return -1;
-	ret = strcmp(left->domain + pos, right->domain);
-	if(ret == 0)
-		ret = strcmp(left->prefix, right->prefix);
+	if(pos > 0)
+		ret = -1;
+	else if(pos < 0)
+		ret = 1;
+	else {
+		ret = strcmp(left->domain, right->domain);
+		if(ret == 0) {
+			pos = left->p_length - right->p_length;
+			if(pos > 0)
+				ret = -1;
+			else if(pos < 0)
+				ret = 1;
+			else if(left->p_length == 0)
+				ret = 0;
+			else
+				ret = strcmp(left->prefix, right->prefix);
+		}
+	}
 	return ret;
 }
 
@@ -175,7 +158,7 @@ void domain_cache_init(const char* hosts_file)
 
 	g_cache.count = 0;
 	rbtree_init(&g_cache.rb_name, name_search, name_compare);
-	rbtree_init(&g_cache.rb_wname, wname_search, wname_compare);
+	rbtree_init(&g_cache.rb_wname, NULL, wname_compare);
 	rbtree_init(&g_cache.rb_expire, NULL, expire_compare);
 
 	if(hosts_file == NULL)
@@ -243,20 +226,28 @@ void domain_cache_init(const char* hosts_file)
 
 DOMAIN_CACHE* domain_cache_search(char* domain)
 {
+	int pos, pos1;
 	SEARCH_CONTEXT ctx;
-	const struct rbnode *node;
+	struct rbnode *node;
+	DOMAIN_CACHE* cache;
 	ctx.domain = domain;
 	ctx.length = strlen(domain);
-	ctx.candidate = NULL;
 	node = rbtree_search(&g_cache.rb_name, &ctx);
 	if(node == RBNODE_NULL) {
 		if(g_cache.wcount < 1)
 			return NULL;
-		node = rbtree_search(&g_cache.rb_wname, &ctx);
-		if(node == RBNODE_NULL) {
-			if(!ctx.candidate)
-				return NULL;
-			node = &ctx.candidate->rb_name;
+		node = rbtree_first(&g_cache.rb_wname);
+		while(node != RBNODE_NULL) {
+			cache = rbtree_entry(node, DOMAIN_CACHE, rb_name);
+			pos = ctx.length - cache->d_length;
+			if(pos >= 0 && strcmp(ctx.domain + pos, cache->domain) == 0) {
+				if(cache->p_length == 0)
+					break;
+				pos1 = pos - cache->p_length;
+				if(pos1 >= 0 && strncmp(ctx.domain, cache->prefix, cache->p_length) == 0)
+					break;
+			}
+			node = rbtree_next(node);
 		}
 	}
 	return rbtree_entry(node, DOMAIN_CACHE, rb_name);
