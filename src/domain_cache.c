@@ -47,17 +47,12 @@ static int wname_compare(const struct rbnode* l, const struct rbnode* r)
 	right = rbtree_entry(r, DOMAIN_CACHE, rb_name);
 	pos = left->d_length - right->d_length;
 	if(pos > 0)
-		ret = strcmp(left->domain + pos, right->domain);
+		ret = -1;
 	else if(pos < 0)
-		ret = strcmp(left->domain, right->domain + (0 - pos));
-	else
+		ret = 1;
+	else {
 		ret = strcmp(left->domain, right->domain);
-	if(ret == 0) {
-		if(pos > 0)
-			ret = -1;
-		else if(pos < 0)
-			ret = 1;
-		else {
+		if(ret == 0) {
 			pos = left->p_length - right->p_length;
 			if(pos > 0)
 				ret = -1;
