@@ -225,73 +225,72 @@ static void process_response(char* buffer, int size)
 	length = size;
 	hdr = (DNS_HDR*)buffer;
 	an_count = ntohs(hdr->an_count);
-	if(hdr->qr != 1 || hdr->tc != 0 || ntohs(hdr->qd_count) != 1 || an_count < 1)
-		return;
-
-	dlen = 0;
-	qds = NULL;
-	pos = buffer + sizeof(DNS_HDR);
-	rear = buffer + size;
-	while(pos < rear) {
-		qlen = (unsigned char)*pos++;
-		if(qlen > 63 || (pos + qlen) > (rear - sizeof(DNS_QDS)))
-			break;
-		if(qlen > 0) {
-			if(dlen > 0)
-				domain[dlen++] = '.';
-			while(qlen-- > 0)
-				domain[dlen++] = (char)tolower(*pos++);
-		}
-		else {
-			qds = (DNS_QDS*) pos;
-			if(ntohs(qds->classes) != 0x01)
-				qds = NULL;
-			else
-				pos += sizeof(DNS_QDS);
-			break;
-		}
-	}
-	domain[dlen] = '\0';
-
-	if(qds && ntohs(qds->type) == 0x01) {
-		ttl = MAX_TTL;
-		index = 0;
-		badfmt = 0;
-		answer = pos;
-		while(badfmt == 0 && pos < rear && index++ < an_count) {
-			rrs = NULL;
-			if((unsigned char)*pos == 0xc0) {
-				pos += 2;
-				rrs = (DNS_RRS*) pos;
+	if(hdr->qr == 1 && hdr->tc == 0 && ntohs(hdr->qd_count) == 1 && an_count > 0) {
+		dlen = 0;
+		qds = NULL;
+		pos = buffer + sizeof(DNS_HDR);
+		rear = buffer + size;
+		while(pos < rear) {
+			qlen = (unsigned char)*pos++;
+			if(qlen > 63 || (pos + qlen) > (rear - sizeof(DNS_QDS)))
+				break;
+			if(qlen > 0) {
+				if(dlen > 0)
+					domain[dlen++] = '.';
+				while(qlen-- > 0)
+					domain[dlen++] = (char)tolower(*pos++);
 			}
 			else {
-				while(pos < rear) {
-					qlen = (unsigned char)*pos++;
-					if(qlen > 63 || (pos + qlen) > (rear - sizeof(DNS_RRS)))
-						break;
-					if(qlen > 0)
-						pos += qlen;
-					else {
-						rrs = (DNS_RRS*) pos;
-						break;
+				qds = (DNS_QDS*) pos;
+				if(ntohs(qds->classes) != 0x01)
+					qds = NULL;
+				else
+					pos += sizeof(DNS_QDS);
+				break;
+			}
+		}
+		domain[dlen] = '\0';
+
+		if(qds && ntohs(qds->type) == 0x01) {
+			ttl = MAX_TTL;
+			index = 0;
+			badfmt = 0;
+			answer = pos;
+			while(badfmt == 0 && pos < rear && index++ < an_count) {
+				rrs = NULL;
+				if((unsigned char)*pos == 0xc0) {
+					pos += 2;
+					rrs = (DNS_RRS*) pos;
+				}
+				else {
+					while(pos < rear) {
+						qlen = (unsigned char)*pos++;
+						if(qlen > 63 || (pos + qlen) > (rear - sizeof(DNS_RRS)))
+							break;
+						if(qlen > 0)
+							pos += qlen;
+						else {
+							rrs = (DNS_RRS*) pos;
+							break;
+						}
 					}
 				}
+				if(rrs == NULL || ntohs(rrs->classes) != 0x01)
+					badfmt = 1;
+				else {
+					ttl_tmp = ntohl(rrs->ttl);
+					if(ttl_tmp < ttl)
+						ttl = ttl_tmp;
+					pos += sizeof(DNS_RRS) + ntohs(rrs->rd_length);
+				}
 			}
-			if(rrs == NULL || ntohs(rrs->classes) != 0x01)
-				badfmt = 1;
-			else {
-				ttl_tmp = ntohl(rrs->ttl);
-				if(ttl_tmp < ttl)
-					ttl = ttl_tmp;
-				pos += sizeof(DNS_RRS) + ntohs(rrs->rd_length);
+			if(badfmt == 0) {
+				hdr->nr_count = 0;
+				hdr->ns_count = 0;
+				length = pos - buffer;
+				if(!disable_cache)
+					domain_cache_append(domain, dlen, ttl, an_count, pos - answer, answer);
 			}
-		}
-		if(badfmt == 0) {
-			hdr->nr_count = 0;
-			hdr->ns_count = 0;
-			length = pos - buffer;
-			if(!disable_cache)
-				domain_cache_append(domain, dlen, ttl, an_count, pos - answer, answer);
 		}
 	}
 
