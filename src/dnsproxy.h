@@ -88,11 +88,19 @@ typedef struct {
 
 typedef struct {
 	struct rbnode rb_name;
-	struct rbnode rb_expire;
-	time_t expire;
+	union {
+		struct {
+			char *prefix;
+			int p_length;
+			int d_same;
+			struct list_head lh_name;
+		};
+		struct {
+			time_t expire;
+			struct rbnode rb_expire;
+		};
+	};
 	time_t timestamp;
-	char *prefix;
-	int p_length;
 	char *domain;
 	int d_length;
 	char *answer;
