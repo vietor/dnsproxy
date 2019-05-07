@@ -575,7 +575,7 @@ int main(int argc, const char* argv[])
 #endif
 
 	printf("%s"
-		" * runing at %d%s\n"
+		" * running at %d%s\n"
 		" * transport to %s:%d,%s\n"
 		, ascii_logo
 		, local_port

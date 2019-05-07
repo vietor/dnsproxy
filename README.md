@@ -1,7 +1,7 @@
 dnsproxy
 ========
 
-A simple DNS proxy server, runing on multiple platform
+A tiny caching DNS server
 
 ## Compiling & Installation
 
