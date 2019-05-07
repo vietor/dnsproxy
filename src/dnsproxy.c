@@ -583,6 +583,7 @@ int main(int argc, const char* argv[])
 		, remote_addr
 		, remote_port
 		, remote_tcp? "tcp": "udp");
+	fflush(stdout);
 
 	srand((unsigned int)time(NULL));
 	domain_cache_init(hosts_file);
