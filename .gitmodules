@@ -1,3 +1,0 @@
-[submodule "src/embed"]
-	path = src/embed
-	url = git://github.com/vietor/embed.git

@@ -8,8 +8,6 @@ A simple DNS proxy server, runing on multiple platform
 ```bash
 $ git clone git://github.com/vietor/dnsproxy.git
 $ cd dnsproxy
-$ git submodule init
-$ git submodule update
 $ make && make install
 ```
 
